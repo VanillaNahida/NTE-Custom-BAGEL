@@ -29,6 +29,7 @@
 #define IDC_ABOUT_CLOSE        2001
 
 #define WM_USER_UPDATE_STATUS  (WM_USER + 100)
+#define WM_LAUNCHER_EXITED     (WM_USER + 101)
 
 WCHAR g_szBinDir[MAX_PATH];
 
@@ -61,6 +62,8 @@ HWND g_hStaticStatus;
 HWND g_hStaticPath;
 HWND g_hWndPreview;
 
+HANDLE g_hLauncherProcess = NULL;
+
 HFONT g_hFont = NULL;
 Gdiplus::Bitmap* g_pPreviewBitmap = NULL;
 
@@ -68,6 +71,7 @@ WCHAR g_szSelectedImage[MAX_PATH] = {0};
 bool g_bImageLoaded = false;
 
 void UpdatePreview();
+DWORD WINAPI LauncherWatchThread(LPVOID lpParam);
 LRESULT CALLBACK AboutDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 ULONG_PTR g_gdiplusToken;
@@ -182,7 +186,7 @@ bool IsLauncherRunning()
     {
         do
         {
-            if (wcsicmp(pe.szExeFile, launcherName) == 0)
+            if (_wcsicmp(pe.szExeFile, launcherName) == 0)
             {
                 found = true;
                 break;
@@ -192,6 +196,15 @@ bool IsLauncherRunning()
 
     CloseHandle(hSnapshot);
     return found;
+}
+
+DWORD WINAPI LauncherWatchThread(LPVOID lpParam)
+{
+    HANDLE hProcess = (HANDLE)lpParam;
+    WaitForSingleObject(hProcess, INFINITE);
+    CloseHandle(hProcess);
+    PostMessageW(g_hWndMain, WM_LAUNCHER_EXITED, 0, 0);
+    return 0;
 }
 
 void LoadImageFromPath(const WCHAR* szPath)
@@ -267,8 +280,14 @@ void OnLaunchInjector()
     if (ShellExecuteExW(&sei))
     {
         UpdateStatusText(L"注入器已以管理员权限启动");
+        EnableWindow(g_hBtnLaunch, FALSE);
         if (sei.hProcess)
-            CloseHandle(sei.hProcess);
+        {
+            g_hLauncherProcess = sei.hProcess;
+            HANDLE hThread = CreateThread(NULL, 0, LauncherWatchThread, sei.hProcess, 0, NULL);
+            if (hThread)
+                CloseHandle(hThread);
+        }
     }
     else
     {
@@ -755,6 +774,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         SetBkMode(hdcStatic, TRANSPARENT);
         return (LRESULT)GetSysColorBrush(COLOR_WINDOW);
     }
+
+    case WM_LAUNCHER_EXITED:
+        g_hLauncherProcess = NULL;
+        EnableWindow(g_hBtnLaunch, TRUE);
+        UpdateStatusText(L"注入器已退出");
+        break;
 
     case WM_DESTROY:
         if (g_pPreviewBitmap)
