@@ -1,0 +1,22 @@
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# Build intermediates
+*/x64/
+*/ipch/
+*.obj
+*.pdb
+*.iobj
+*.ipdb
+*.recipe
+*.log
+*.tlog
+*.lastbuildstate
+*FileListAbsolute.txt
+*.db
+
+# Compiled output (except injector)
+replace.png
+异环呗果图片上传器.exe
