@@ -6,6 +6,7 @@
 #include <commctrl.h>
 #include <shellapi.h>
 #include <shlobj.h>
+#include <tlhelp32.h>
 #include <string>
 #include "resource.h"
 
@@ -166,8 +167,41 @@ void UpdatePathText()
     }
 }
 
+bool IsLauncherRunning()
+{
+    WCHAR launcherName[] = L"launcher.exe";
+    HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (hSnapshot == INVALID_HANDLE_VALUE)
+        return false;
+
+    PROCESSENTRY32W pe = {0};
+    pe.dwSize = sizeof(pe);
+
+    bool found = false;
+    if (Process32FirstW(hSnapshot, &pe))
+    {
+        do
+        {
+            if (wcsicmp(pe.szExeFile, launcherName) == 0)
+            {
+                found = true;
+                break;
+            }
+        } while (Process32NextW(hSnapshot, &pe));
+    }
+
+    CloseHandle(hSnapshot);
+    return found;
+}
+
 void LoadImageFromPath(const WCHAR* szPath)
 {
+    if (IsLauncherRunning())
+    {
+        MessageBoxW(g_hWndMain, L"注入器已启动，请关闭注入器后重新选择图片", L"提示", MB_OK | MB_ICONWARNING);
+        return;
+    }
+
     wcscpy_s(g_szSelectedImage, MAX_PATH, szPath);
     g_bImageLoaded = true;
     UpdatePathText();
