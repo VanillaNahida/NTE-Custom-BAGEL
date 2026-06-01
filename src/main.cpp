@@ -166,6 +166,33 @@ void UpdatePathText()
     }
 }
 
+void LoadImageFromPath(const WCHAR* szPath)
+{
+    wcscpy_s(g_szSelectedImage, MAX_PATH, szPath);
+    g_bImageLoaded = true;
+    UpdatePathText();
+
+    if (g_pPreviewBitmap)
+    {
+        delete g_pPreviewBitmap;
+        g_pPreviewBitmap = NULL;
+    }
+
+    const Resolution& res = g_resolutions[g_selectedResolution];
+
+    if (ProcessAndSaveImage(g_szSelectedImage, res.width, res.height))
+    {
+        WCHAR msg[256];
+        wsprintfW(msg, L"图片已自动处理并保存到 replace.png (%d x %d)", res.width, res.height);
+        UpdateStatusText(msg);
+        UpdatePreview();
+    }
+    else
+    {
+        UpdateStatusText(L"错误: 图片处理失败");
+    }
+}
+
 void OnSelectImage()
 {
     WCHAR szFile[MAX_PATH] = {0};
@@ -185,29 +212,7 @@ void OnSelectImage()
 
     if (GetOpenFileNameW(&ofn))
     {
-        wcscpy_s(g_szSelectedImage, MAX_PATH, szFile);
-        g_bImageLoaded = true;
-        UpdatePathText();
-
-        if (g_pPreviewBitmap)
-        {
-            delete g_pPreviewBitmap;
-            g_pPreviewBitmap = NULL;
-        }
-
-        const Resolution& res = g_resolutions[g_selectedResolution];
-
-        if (ProcessAndSaveImage(g_szSelectedImage, res.width, res.height))
-        {
-            WCHAR msg[256];
-            wsprintfW(msg, L"图片已自动处理并保存到 replace.png (%d x %d)", res.width, res.height);
-            UpdateStatusText(msg);
-            UpdatePreview();
-        }
-        else
-        {
-            UpdateStatusText(L"错误: 图片处理失败");
-        }
+        LoadImageFromPath(szFile);
     }
 }
 
@@ -520,6 +525,41 @@ LRESULT CALLBACK PreviewWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
 {
     switch (msg)
     {
+    case WM_CREATE:
+        DragAcceptFiles(hWnd, TRUE);
+        return 0;
+
+    case WM_DROPFILES:
+    {
+        HDROP hDrop = (HDROP)wParam;
+        WCHAR szFile[MAX_PATH] = {0};
+        if (DragQueryFileW(hDrop, 0, szFile, MAX_PATH) > 0)
+        {
+            const WCHAR* ext = wcsrchr(szFile, L'.');
+            if (ext)
+            {
+                WCHAR extLower[16];
+                int i = 0;
+                for (; ext[i] && i < 15; i++)
+                    extLower[i] = (ext[i] >= L'A' && ext[i] <= L'Z') ? ext[i] + 32 : ext[i];
+                extLower[i] = L'\0';
+
+                if (wcscmp(extLower, L".png") == 0 || wcscmp(extLower, L".jpg") == 0 ||
+                    wcscmp(extLower, L".jpeg") == 0 || wcscmp(extLower, L".bmp") == 0 ||
+                    wcscmp(extLower, L".gif") == 0 || wcscmp(extLower, L".tiff") == 0)
+                {
+                    LoadImageFromPath(szFile);
+                }
+                else
+                {
+                    UpdateStatusText(L"不支持的文件格式，请拖入图片文件");
+                }
+            }
+        }
+        DragFinish(hDrop);
+        return 0;
+    }
+
     case WM_PAINT:
     {
         PAINTSTRUCT ps;
@@ -611,7 +651,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
             0, 0, 140, 32,
             hWnd, (HMENU)IDC_BTN_ABOUT, hInst, NULL);
 
-        g_hStaticPath = CreateWindowW(L"STATIC", L"未选择图片",
+        g_hStaticPath = CreateWindowW(L"STATIC", L"未选择图片，可点击上方按钮选择或拖入图片到下方空白处。",
             WS_CHILD | WS_VISIBLE | SS_LEFT | SS_ENDELLIPSIS,
             0, 0, 400, 20,
             hWnd, (HMENU)IDC_STATIC_PATH, hInst, NULL);
