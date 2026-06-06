@@ -21,3 +21,8 @@
 replace.png
 异环呗果图片上传器.exe
 *.zip
+*.txt
+bin2/
+HTGame.in-game.photo.replacement/
+HTGame.window.overlay.video/
+lib/
