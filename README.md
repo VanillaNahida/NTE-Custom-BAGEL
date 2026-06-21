@@ -29,6 +29,8 @@
 
 # 使用方法
 
+教程视频：[https://www.xcnahida.cn/archives/MFb9rQFg](https://www.xcnahida.cn/archives/MFb9rQFg)
+
 ## 使用说明
 
 1. 首先不要启动游戏启动器，先启动 `异环呗果图片上传器.exe`，这个exe可以从[Release](https://github.com/VanillaNahida/NTE-Custom-BAGEL/releases)页面下载 
