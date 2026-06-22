@@ -15,6 +15,12 @@
 
 </div>
 
+<div align="center">
+  <img width="1600" alt="image" src="https://github.com/user-attachments/assets/39363a81-47cf-4470-8a74-9408f1913fa3" />
+
+  <a>效果图</a>
+</div>
+
 # TODO 待实现的功能
 
 - [x] 完成图片上传功能
