@@ -1,4 +1,5 @@
 #define _WIN32_IE 0x0600
+#define VERSION L"1.0.2" // 版本号
 #include <windows.h>
 #include <objidl.h>
 #include <gdiplus.h>
@@ -198,6 +199,11 @@ bool IsLauncherRunning()
     return found;
 }
 
+std::wstring GetAppVersion()
+{
+    return L"v" + std::wstring(VERSION);
+}
+
 DWORD WINAPI LauncherWatchThread(LPVOID lpParam)
 {
     HANDLE hProcess = (HANDLE)lpParam;
@@ -249,12 +255,12 @@ void OnSelectImage()
     ofn.hwndOwner = g_hWndMain;
     ofn.lpstrFile = szFile;
     ofn.nMaxFile = MAX_PATH;
-    ofn.lpstrFilter = L"图片文件\0*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tiff\0"
+    ofn.lpstrFilter = L"图片文件(*.png;*.jpg;*.jpeg;*.bmp;*.tiff)\0*.png;*.jpg;*.jpeg;*.bmp;*.tiff\0"
                        L"PNG 文件\0*.png\0"
                        L"JPEG 文件\0*.jpg;*.jpeg\0"
                        L"BMP 文件\0*.bmp\0";
     ofn.nFilterIndex = 1;
-    ofn.lpstrTitle = L"请选择图片文件，推荐比例: 16:9";
+    ofn.lpstrTitle = L"请选择图片文件，推荐比例: 16:9, 不符合比例的图片将会被自动拉伸处理";
     ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
 
     if (GetOpenFileNameW(&ofn))
@@ -324,11 +330,32 @@ LRESULT CALLBACK AboutDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
             hFont = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
         SetWindowLongPtrW(hWnd, GWLP_USERDATA, (LONG_PTR)hFont);
 
-        const WCHAR* szDisclaimer = L"本程序开源，禁止用于商业用途，仅供学习交流和研究目的\n若程序被滥用或倒卖，作者将有权关闭使用权限。\n如对你有帮助，请给项目点一个Star!";
-
         const int marginX = 20;
         const int marginTop = 14;
         const int textMaxWidth = 380;
+        int y = marginTop;
+
+        // 版本号和作者信息
+        const int infoLineHeight = 20;
+        {
+            std::wstring verText = L"程序版本：" + GetAppVersion();
+            HWND hVersion = CreateWindowW(L"STATIC", verText.c_str(),
+                WS_CHILD | WS_VISIBLE,
+                marginX, y, textMaxWidth, infoLineHeight,
+                hWnd, NULL, hInst, NULL);
+            SendMessageW(hVersion, WM_SETFONT, (WPARAM)hFont, TRUE);
+        }
+        y += infoLineHeight;
+
+        HWND hAuthor = CreateWindowW(L"STATIC", L"作者：香草味的纳西妲喵",
+            WS_CHILD | WS_VISIBLE,
+            marginX, y, textMaxWidth, infoLineHeight,
+            hWnd, NULL, hInst, NULL);
+        SendMessageW(hAuthor, WM_SETFONT, (WPARAM)hFont, TRUE);
+        y += infoLineHeight + 6;
+
+        // 免责声明
+        const WCHAR* szDisclaimer = L"本程序开源，禁止用于商业用途，禁止上传违规图片，仅供学习交流和研究目的\n若程序被滥用或倒卖，作者将有权关闭使用权限。\n如对你有帮助，请给项目点一个Star!";
 
         HDC hdc = GetDC(hWnd);
         HFONT hOldFont = (HFONT)SelectObject(hdc, hFont);
@@ -341,13 +368,15 @@ LRESULT CALLBACK AboutDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
         HWND hStatic = CreateWindowW(L"STATIC", szDisclaimer,
             WS_CHILD | WS_VISIBLE,
-            marginX, marginTop, textMaxWidth, textHeight,
+            marginX, y, textMaxWidth, textHeight,
             hWnd, NULL, hInst, NULL);
         SendMessageW(hStatic, WM_SETFONT, (WPARAM)hFont, TRUE);
 
+        y += textHeight;
+
         const int linkGap = 8;
         const int linkHeight = 28;
-        int y = marginTop + textHeight + linkGap;
+        y += linkGap;
 
         HWND hLink;
 
@@ -370,7 +399,7 @@ LRESULT CALLBACK AboutDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         y += linkHeight + 8;
 
         hLink = CreateWindowW(L"SysLink",
-            L"<a href=\"https://xcnahida.cn/contact\">问题反馈 & 交流群</a>",
+            L"<a href=\"https://xcnahida.cn/contact\">问题反馈交流群</a>",
             WS_CHILD | WS_VISIBLE,
             marginX, y, textMaxWidth, linkHeight,
             hWnd, NULL, hInst, NULL);
@@ -556,6 +585,18 @@ void LayoutControls(int clientWidth, int clientHeight)
 
     SetWindowPos(g_hStaticStatus, NULL,
         margin, clientHeight - margin - statusHeight, clientWidth - margin * 2, statusHeight, SWP_NOZORDER);
+}
+
+void TryLoadExistingImage()
+{
+    WCHAR targetPath[MAX_PATH];
+    wsprintfW(targetPath, L"%sreplace.png", g_szBinDir);
+
+    if (GetFileAttributesW(targetPath) != INVALID_FILE_ATTRIBUTES)
+    {
+        UpdatePreview();
+        UpdateStatusText(L"已加载现有图片");
+    }
 }
 
 void UpdatePreview()
@@ -859,6 +900,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     ShowWindow(hWnd, nCmdShow);
     UpdateWindow(hWnd);
+
+    TryLoadExistingImage();
 
     MSG msg;
     while (GetMessageW(&msg, NULL, 0, 0))
