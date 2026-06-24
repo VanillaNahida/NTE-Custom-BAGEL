@@ -1,4 +1,4 @@
-# NTE-Custom-BAGEL
+# NTE-Custom-BAGEL 异环呗果图片视频上传器
 
 ![:name](https://count.getloli.com/@NTE-Custom-BAGEL?name=NTE-Custom-BAGEL&theme=minecraft&padding=6&offset=0&align=top&scale=1&pixelated=1&darkmode=auto)
 
@@ -17,7 +17,6 @@
 
 <div align="center">
   <img width="1600" alt="image" src="https://github.com/user-attachments/assets/39363a81-47cf-4470-8a74-9408f1913fa3" />
-
   <a>效果图</a>
 </div>
 
