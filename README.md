@@ -66,9 +66,9 @@
 
 若程序被滥用或倒卖，作者将有权关闭使用权限。
 
-# Bug 反馈
+# 问题 & Bug 反馈
 
-如果在使用过程中遇到任何问题，请通过以下方式反馈：
+如果在使用过程中遇到任何问题和bug，请通过以下方式反馈：
 
 - [GitHub Issues](https://github.com/VanillaNahida/NTE-Custom-BAGEL/issues)
 - 问题反馈 & 交流群：https://xcnahida.cn/contact
