@@ -36,7 +36,7 @@ A custom image replacement tool for Neverness to Everness (NTE), supporting cust
 
 # How to Use
 
-Tutorial video: [https://www.xcnahida.cn/archives/MFb9rQFg](https://www.xcnahida.cn/archives/MFb9rQFg)
+Tutorial video: [https://www.xcnahida.cn/archives/MFb9rQFg](https://www.xcnahida.cn/archives/MFb9rQFg) （chinese language）
 
 ## Instructions
 
