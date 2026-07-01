@@ -1,5 +1,7 @@
 # NTE-Custom-BAGEL 异环呗果图片视频上传器
 
+[English](README_en.md) | 中文
+
 ![:name](https://count.getloli.com/@NTE-Custom-BAGEL?name=NTE-Custom-BAGEL&theme=minecraft&padding=6&offset=0&align=top&scale=1&pixelated=1&darkmode=auto)
 
 一个用于异环呗果（NTE）游戏的图片替换工具，支持自定义上传图片并在游戏中替换拍照背景。
