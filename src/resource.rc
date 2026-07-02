@@ -21,9 +21,9 @@ BEGIN
         BLOCK "080404B0"
         BEGIN
             VALUE "CompanyName", "VanillaNahida"
-            VALUE "FileVersion", "1.0.3.0"
+            VALUE "FileVersion", "1.0.4.0"
             VALUE "LegalCopyright", "Copyright (C) VanillaNahida"
-            VALUE "ProductVersion", "1.0.3.0"
+            VALUE "ProductVersion", "1.0.4.0"
             VALUE "Author", "VanillaNahida"
         END
     END

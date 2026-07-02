@@ -1,5 +1,5 @@
 #define _WIN32_IE 0x0600
-#define VERSION L"1.0.3" // 版本号
+#include "version.h"
 #include <windows.h>
 #include <objidl.h>
 #include <gdiplus.h>
@@ -42,9 +42,11 @@ struct CloudUploadResult {
     char errorMessage[512];
 };
 typedef CloudUploadResult (*CloudUpload_UploadImage_t)(const wchar_t*);
+typedef void (*CloudUpload_CheckForUpdate_t)(HWND, const wchar_t*, const wchar_t*, const wchar_t*);
 
 HMODULE g_hCloudUploadDll = nullptr;
 CloudUpload_UploadImage_t g_pfnUpload = nullptr;
+CloudUpload_CheckForUpdate_t g_pfnCheckUpdate = nullptr;
 
 bool InitBinDir()
 {
@@ -215,7 +217,7 @@ bool IsLauncherRunning()
 
 std::wstring GetAppVersion()
 {
-    return L"v" + std::wstring(VERSION);
+    return L"v" + std::wstring(APP_VERSION_W);
 }
 
 DWORD WINAPI LauncherWatchThread(LPVOID lpParam)
@@ -254,6 +256,15 @@ void LoadImageFromPath(const WCHAR* szPath)
         wsprintfW(msg, i18n.statusImageProcessed, res.width, res.height);
         UpdateStatusText(msg);
         UpdatePreview();
+
+        // Check for update when user loads an image
+        if (g_pfnCheckUpdate) {
+            CreateThread(NULL, 0, [](LPVOID) -> DWORD {
+                const auto& i = GetI18N();
+                g_pfnCheckUpdate(g_hWndMain, APP_VERSION_W, i.updateTitle, i.updateMsg);
+                return 0;
+            }, NULL, 0, NULL);
+        }
     }
     else
     {
@@ -944,6 +955,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         return 1;
     }
 
+    g_pfnCheckUpdate = (CloudUpload_CheckForUpdate_t)GetProcAddress(g_hCloudUploadDll, "CloudUpload_CheckForUpdate");
+
     if (!InitBinDir()) {
         FreeLibrary(g_hCloudUploadDll);
         return 1;
@@ -1005,6 +1018,15 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     UpdateWindow(hWnd);
 
     TryLoadExistingImage();
+
+    // Check for updates asynchronously on startup
+    if (g_pfnCheckUpdate) {
+        CreateThread(NULL, 0, [](LPVOID) -> DWORD {
+            const auto& i = GetI18N();
+            g_pfnCheckUpdate(g_hWndMain, APP_VERSION_W, i.updateTitle, i.updateMsg);
+            return 0;
+        }, NULL, 0, NULL);
+    }
 
     MSG msg;
     while (GetMessageW(&msg, NULL, 0, 0))

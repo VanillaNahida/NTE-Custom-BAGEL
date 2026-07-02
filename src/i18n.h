@@ -73,6 +73,9 @@ struct LangStrings {
     const wchar_t* aboutLinkGithub;
     const wchar_t* aboutLinkBilibili;
     const wchar_t* aboutLinkContact;
+    // --- Update Check ---
+    const wchar_t* updateTitle;
+    const wchar_t* updateMsg;  // L"发现新版本 %s！\n当前版本：%s\n\n是否前往 GitHub 下载更新？"
 };
 
 inline const LangStrings& GetI18N()
@@ -115,7 +118,9 @@ inline const LangStrings& GetI18N()
         L"确定",
         L"<a href=\"https://github.com/VanillaNahida/NTE-Custom-BAGEL\">程序代码开源GitHub</a>",
         L"<a href=\"https://space.bilibili.com/1347891621\">作者B站主页</a>",
-        L"<a href=\"https://xcnahida.cn/contact\">问题反馈交流群</a>",
+        L"<a href=\"https://xcnahida.cn/contact\">问题反馈交流群</a>",        
+        L"发现新版本",
+        L"发现新版本 %s！\n当前版本：%s\n\n是否前往 GitHub 下载更新？",
     };
 
     static const LangStrings enUS = {
@@ -157,6 +162,8 @@ inline const LangStrings& GetI18N()
         L"<a href=\"https://github.com/VanillaNahida/NTE-Custom-BAGEL\">GitHub Repository</a>",
         L"<a href=\"https://space.bilibili.com/1347891621\">Author's Bilibili Page</a>",
         L"<a href=\"https://xcnahida.cn/contact\">Contact / Support</a>",
+        L"New Version Available",
+        L"New version %s!\nCurrent version: %s\n\nDownload from GitHub?",
     };
 
     static const bool isChinese = GetEffectiveIsChinese();
