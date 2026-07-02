@@ -23,8 +23,6 @@
 </div>
 
 # Tips：
-The English README document is being written...    
-
 点点 Star ，点点 Watch，有更新第一时间获取！
 
 # TODO 待实现的功能
