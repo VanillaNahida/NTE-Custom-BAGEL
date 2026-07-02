@@ -29,3 +29,8 @@ lib/
 src/resource.aps
 
 HTGame.BAGEL.Image.Review.Kernel
+
+异环自定义上传云控/
+src/libs/
+*.exp
+*.lib

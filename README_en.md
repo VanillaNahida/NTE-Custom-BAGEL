@@ -70,6 +70,8 @@ This software is prohibited for commercial use. It is intended solely for learni
 
 Do NOT use this project to replace images with illegal or inappropriate content. You bear full responsibility for any consequences.
 
+To protect the program from abuse and DMCA takedowns, this project may collect uploaded images and device information (image hash and device ID only) during use. This data is used solely for compliance analysis. All user data will be anonymized.
+
 If the program is abused or resold, the author reserves the right to revoke access.
 
 # Issues & Bug Reports

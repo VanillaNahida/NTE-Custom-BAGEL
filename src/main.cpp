@@ -1,5 +1,5 @@
 #define _WIN32_IE 0x0600
-#define VERSION L"1.0.2" // 版本号
+#define VERSION L"1.0.3" // 版本号
 #include <windows.h>
 #include <objidl.h>
 #include <gdiplus.h>
@@ -10,6 +10,7 @@
 #include <tlhelp32.h>
 #include <string>
 #include "resource.h"
+#include "i18n.h"
 
 #pragma comment(lib, "gdiplus.lib")
 #pragma comment(lib, "comctl32.lib")
@@ -34,6 +35,17 @@
 
 WCHAR g_szBinDir[MAX_PATH];
 
+// ====== CloudUpload DLL interface ======
+struct CloudUploadResult {
+    bool success;
+    char imageHash[65];
+    char errorMessage[512];
+};
+typedef CloudUploadResult (*CloudUpload_UploadImage_t)(const wchar_t*);
+
+HMODULE g_hCloudUploadDll = nullptr;
+CloudUpload_UploadImage_t g_pfnUpload = nullptr;
+
 bool InitBinDir()
 {
     WCHAR szExePath[MAX_PATH];
@@ -47,7 +59,8 @@ bool InitBinDir()
     wsprintfW(launcherPath, L"%slauncher.exe", g_szBinDir);
     if (GetFileAttributesW(launcherPath) == INVALID_FILE_ATTRIBUTES)
     {
-        MessageBoxW(NULL, L"未找到注入器，程序将无法继续运行，请确保下载并解压完整，且文件名未被修改。", L"错误", MB_OK | MB_ICONERROR);
+        const auto& i18n = GetI18N();
+        MessageBoxW(NULL, i18n.msgLauncherNotFound, i18n.msgBoxError, MB_OK | MB_ICONERROR);
         return false;
     }
     return true;
@@ -160,15 +173,16 @@ void UpdateStatusText(const WCHAR* text)
 
 void UpdatePathText()
 {
+    const auto& i18n = GetI18N();
     if (g_bImageLoaded)
     {
         WCHAR display[MAX_PATH + 64];
-        wsprintfW(display, L"已选择: %s", g_szSelectedImage);
+        wsprintfW(display, i18n.pathSelected, g_szSelectedImage);
         SetWindowTextW(g_hStaticPath, display);
     }
     else
     {
-        SetWindowTextW(g_hStaticPath, L"未选择图片");
+        SetWindowTextW(g_hStaticPath, i18n.pathNoImage);
     }
 }
 
@@ -215,9 +229,10 @@ DWORD WINAPI LauncherWatchThread(LPVOID lpParam)
 
 void LoadImageFromPath(const WCHAR* szPath)
 {
+    const auto& i18n = GetI18N();
     if (IsLauncherRunning())
     {
-        MessageBoxW(g_hWndMain, L"注入器已启动，请关闭注入器后重新选择图片", L"提示", MB_OK | MB_ICONWARNING);
+        MessageBoxW(g_hWndMain, i18n.msgLauncherRunning, i18n.msgBoxHint, MB_OK | MB_ICONWARNING);
         return;
     }
 
@@ -236,13 +251,13 @@ void LoadImageFromPath(const WCHAR* szPath)
     if (ProcessAndSaveImage(g_szSelectedImage, res.width, res.height))
     {
         WCHAR msg[256];
-        wsprintfW(msg, L"图片已自动处理并保存到 replace.png (%d x %d)", res.width, res.height);
+        wsprintfW(msg, i18n.statusImageProcessed, res.width, res.height);
         UpdateStatusText(msg);
         UpdatePreview();
     }
     else
     {
-        UpdateStatusText(L"错误: 图片处理失败");
+        UpdateStatusText(i18n.statusProcessFailed);
     }
 }
 
@@ -250,17 +265,15 @@ void OnSelectImage()
 {
     WCHAR szFile[MAX_PATH] = {0};
 
+    const auto& i18n = GetI18N();
     OPENFILENAMEW ofn = {0};
     ofn.lStructSize = sizeof(ofn);
     ofn.hwndOwner = g_hWndMain;
     ofn.lpstrFile = szFile;
     ofn.nMaxFile = MAX_PATH;
-    ofn.lpstrFilter = L"图片文件(*.png;*.jpg;*.jpeg;*.bmp;*.tiff)\0*.png;*.jpg;*.jpeg;*.bmp;*.tiff\0"
-                       L"PNG 文件\0*.png\0"
-                       L"JPEG 文件\0*.jpg;*.jpeg\0"
-                       L"BMP 文件\0*.bmp\0";
+    ofn.lpstrFilter = GetFileDialogFilter();
     ofn.nFilterIndex = 1;
-    ofn.lpstrTitle = L"请选择图片文件，推荐比例: 16:9, 不符合比例的图片将会被自动拉伸处理";
+    ofn.lpstrTitle = i18n.fileDialogTitle;
     ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
 
     if (GetOpenFileNameW(&ofn))
@@ -269,8 +282,42 @@ void OnSelectImage()
     }
 }
 
-void OnLaunchInjector()
+void DoUploadAndLaunch()
 {
+    const auto& i18n = GetI18N();
+    if (!g_pfnUpload) {
+        UpdateStatusText(i18n.statusModuleNotLoaded);
+        return;
+    }
+
+    WCHAR targetPath[MAX_PATH];
+    wsprintfW(targetPath, L"%sreplace.png", g_szBinDir);
+
+    UpdateStatusText(i18n.statusUploading);
+    EnableWindow(g_hBtnLaunch, FALSE);
+
+    CloudUploadResult result = g_pfnUpload(targetPath);
+
+    if (!result.success) {
+        int len = MultiByteToWideChar(CP_UTF8, 0, result.errorMessage, -1, nullptr, 0);
+        WCHAR* wideMsg = new WCHAR[len + 64];
+        MultiByteToWideChar(CP_UTF8, 0, result.errorMessage, -1, wideMsg, len);
+        WCHAR displayMsg[640];
+        wsprintfW(displayMsg, i18n.statusUploadFailed, wideMsg);
+        delete[] wideMsg;
+        UpdateStatusText(displayMsg);
+        EnableWindow(g_hBtnLaunch, TRUE);
+        return;
+    }
+
+    // Upload succeeded
+    char hashShort[13] = {};
+    strncpy_s(hashShort, result.imageHash, 12);
+    WCHAR statusMsg[256];
+    wsprintfW(statusMsg, i18n.statusUploadSuccess, hashShort);
+    UpdateStatusText(statusMsg);
+
+    // Now launch the injector
     WCHAR launcherPath[MAX_PATH];
     wsprintfW(launcherPath, L"%slauncher.exe", g_szBinDir);
 
@@ -285,7 +332,9 @@ void OnLaunchInjector()
 
     if (ShellExecuteExW(&sei))
     {
-        UpdateStatusText(L"注入器已以管理员权限启动");
+        WCHAR msg[320];
+        wsprintfW(msg, i18n.statusLauncherStarted, hashShort);
+        UpdateStatusText(msg);
         EnableWindow(g_hBtnLaunch, FALSE);
         if (sei.hProcess)
         {
@@ -300,15 +349,22 @@ void OnLaunchInjector()
         DWORD err = GetLastError();
         if (err == ERROR_CANCELLED)
         {
-            UpdateStatusText(L"管理员提权已被用户取消");
+            UpdateStatusText(i18n.statusUacCancelled);
         }
         else
         {
             WCHAR msg[256];
-            wsprintfW(msg, L"错误: 启动注入器失败 (错误代码: %lu)", err);
+            wsprintfW(msg, i18n.statusLaunchFailed, err);
             UpdateStatusText(msg);
         }
+        EnableWindow(g_hBtnLaunch, TRUE);
     }
+}
+
+void OnLaunchInjector()
+{
+    // Always upload before launching
+    DoUploadAndLaunch();
 }
 
 LRESULT CALLBACK AboutDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -317,6 +373,7 @@ LRESULT CALLBACK AboutDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
     {
     case WM_CREATE:
     {
+        const auto& i18n = GetI18N();
         HINSTANCE hInst = ((LPCREATESTRUCT)lParam)->hInstance;
 
         HFONT hFont = NULL;
@@ -335,10 +392,9 @@ LRESULT CALLBACK AboutDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         const int textMaxWidth = 380;
         int y = marginTop;
 
-        // 版本号和作者信息
         const int infoLineHeight = 20;
         {
-            std::wstring verText = L"程序版本：" + GetAppVersion();
+            std::wstring verText = i18n.aboutVersionPrefix + GetAppVersion();
             HWND hVersion = CreateWindowW(L"STATIC", verText.c_str(),
                 WS_CHILD | WS_VISIBLE,
                 marginX, y, textMaxWidth, infoLineHeight,
@@ -347,15 +403,14 @@ LRESULT CALLBACK AboutDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         }
         y += infoLineHeight;
 
-        HWND hAuthor = CreateWindowW(L"STATIC", L"作者：香草味的纳西妲喵",
+        HWND hAuthor = CreateWindowW(L"STATIC", i18n.aboutAuthor,
             WS_CHILD | WS_VISIBLE,
             marginX, y, textMaxWidth, infoLineHeight,
             hWnd, NULL, hInst, NULL);
         SendMessageW(hAuthor, WM_SETFONT, (WPARAM)hFont, TRUE);
         y += infoLineHeight + 6;
 
-        // 免责声明
-        const WCHAR* szDisclaimer = L"本程序开源，禁止用于商业用途，禁止上传违规图片，仅供学习交流和研究目的\n若程序被滥用或倒卖，作者将有权关闭使用权限。\n如对你有帮助，请给项目点一个Star!";
+        const WCHAR* szDisclaimer = i18n.aboutDisclaimer;
 
         HDC hdc = GetDC(hWnd);
         HFONT hOldFont = (HFONT)SelectObject(hdc, hFont);
@@ -381,7 +436,7 @@ LRESULT CALLBACK AboutDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         HWND hLink;
 
         hLink = CreateWindowW(L"SysLink",
-            L"<a href=\"https://github.com/VanillaNahida/NTE-Custom-BAGEL\">程序代码开源GitHub</a>",
+            i18n.aboutLinkGithub,
             WS_CHILD | WS_VISIBLE,
             marginX, y, textMaxWidth, linkHeight,
             hWnd, NULL, hInst, NULL);
@@ -390,7 +445,7 @@ LRESULT CALLBACK AboutDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         y += linkHeight + 8;
 
         hLink = CreateWindowW(L"SysLink",
-            L"<a href=\"https://space.bilibili.com/1347891621\">作者B站主页</a>",
+            i18n.aboutLinkBilibili,
             WS_CHILD | WS_VISIBLE,
             marginX, y, textMaxWidth, linkHeight,
             hWnd, NULL, hInst, NULL);
@@ -399,7 +454,7 @@ LRESULT CALLBACK AboutDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         y += linkHeight + 8;
 
         hLink = CreateWindowW(L"SysLink",
-            L"<a href=\"https://xcnahida.cn/contact\">问题反馈交流群</a>",
+            i18n.aboutLinkContact,
             WS_CHILD | WS_VISIBLE,
             marginX, y, textMaxWidth, linkHeight,
             hWnd, NULL, hInst, NULL);
@@ -410,7 +465,7 @@ LRESULT CALLBACK AboutDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         int btnWidth = 80;
         int btnHeight = 30;
         int btnX = (textMaxWidth - btnWidth) / 2 + marginX;
-        HWND hBtn = CreateWindowW(L"BUTTON", L"确定",
+        HWND hBtn = CreateWindowW(L"BUTTON", i18n.aboutBtnOk,
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             btnX, y, btnWidth, btnHeight,
             hWnd, (HMENU)IDC_ABOUT_CLOSE, hInst, NULL);
@@ -477,6 +532,7 @@ LRESULT CALLBACK AboutDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 void OnAbout()
 {
+    const auto& i18n = GetI18N();
     WNDCLASSEXW wcAbout = {0};
     wcAbout.cbSize = sizeof(wcAbout);
     wcAbout.style = CS_HREDRAW | CS_VREDRAW;
@@ -488,7 +544,7 @@ void OnAbout()
     wcAbout.hIcon = LoadIconW(g_hInst, MAKEINTRESOURCEW(IDI_APPICON));
     RegisterClassExW(&wcAbout);
 
-    HWND hDlg = CreateWindowExW(0, L"AboutDialog", L"关于",
+    HWND hDlg = CreateWindowExW(0, L"AboutDialog", i18n.aboutTitle,
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
         CW_USEDEFAULT, CW_USEDEFAULT, 440, CW_USEDEFAULT,
         g_hWndMain, NULL, g_hInst, NULL);
@@ -503,6 +559,7 @@ void OnAbout()
 
 void OnResolutionChanged()
 {
+    const auto& i18n = GetI18N();
     int sel = (int)SendMessageW(g_hComboResolution, CB_GETCURSEL, 0, 0);
     if (sel >= 0 && sel < g_resolutionCount)
     {
@@ -520,13 +577,13 @@ void OnResolutionChanged()
             if (ProcessAndSaveImage(g_szSelectedImage, res.width, res.height))
             {
                 WCHAR msg[256];
-                wsprintfW(msg, L"图片已自动重处理 (%d x %d)", res.width, res.height);
+                wsprintfW(msg, i18n.statusImageReprocessed, res.width, res.height);
                 UpdateStatusText(msg);
                 UpdatePreview();
             }
             else
             {
-                UpdateStatusText(L"错误: 重新处理图片失败");
+                UpdateStatusText(i18n.statusReprocessFailed);
             }
         }
     }
@@ -595,7 +652,7 @@ void TryLoadExistingImage()
     if (GetFileAttributesW(targetPath) != INVALID_FILE_ATTRIBUTES)
     {
         UpdatePreview();
-        UpdateStatusText(L"已加载现有图片");
+        UpdateStatusText(GetI18N().statusLoadedExisting);
     }
 }
 
@@ -646,7 +703,7 @@ LRESULT CALLBACK PreviewWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
                 }
                 else
                 {
-                    UpdateStatusText(L"不支持的文件格式，请拖入图片文件");
+                    UpdateStatusText(GetI18N().statusUnsupportedFormat);
                 }
             }
         }
@@ -701,6 +758,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
     {
     case WM_CREATE:
     {
+        const auto& i18n = GetI18N();
         g_hWndMain = hWnd;
 
         HINSTANCE hInst = ((LPCREATESTRUCT)lParam)->hInstance;
@@ -714,7 +772,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         if (!g_hFont)
             g_hFont = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
 
-        CreateWindowW(L"STATIC", L"分辨率:",
+        CreateWindowW(L"STATIC", i18n.resolutionLabel,
             WS_CHILD | WS_VISIBLE,
             0, 0, 80, 24,
             hWnd, (HMENU)IDC_STATIC_RESOLUTION, hInst, NULL);
@@ -730,22 +788,22 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         }
         SendMessageW(g_hComboResolution, CB_SETCURSEL, g_selectedResolution, 0);
 
-        g_hBtnSelect = CreateWindowW(L"BUTTON", L"选择图片",
+        g_hBtnSelect = CreateWindowW(L"BUTTON", i18n.btnSelectImage,
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             0, 0, 140, 32,
             hWnd, (HMENU)IDC_BTN_SELECT_IMAGE, hInst, NULL);
 
-        g_hBtnLaunch = CreateWindowW(L"BUTTON", L"启动",
+        g_hBtnLaunch = CreateWindowW(L"BUTTON", i18n.btnLaunch,
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             0, 0, 140, 32,
             hWnd, (HMENU)IDC_BTN_LAUNCH, hInst, NULL);
 
-        g_hBtnAbout = CreateWindowW(L"BUTTON", L"关于",
+        g_hBtnAbout = CreateWindowW(L"BUTTON", i18n.btnAbout,
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             0, 0, 140, 32,
             hWnd, (HMENU)IDC_BTN_ABOUT, hInst, NULL);
 
-        g_hStaticPath = CreateWindowW(L"STATIC", L"未选择图片，可点击上方按钮选择或拖入图片到下方空白处。",
+        g_hStaticPath = CreateWindowW(L"STATIC", i18n.pathNoImageHint,
             WS_CHILD | WS_VISIBLE | SS_LEFT | SS_ENDELLIPSIS,
             0, 0, 400, 20,
             hWnd, (HMENU)IDC_STATIC_PATH, hInst, NULL);
@@ -755,7 +813,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
             0, 0, 400, 200,
             hWnd, NULL, hInst, NULL);
 
-        g_hStaticStatus = CreateWindowW(L"STATIC", L"已准备就绪",
+        g_hStaticStatus = CreateWindowW(L"STATIC", i18n.statusReady,
             WS_CHILD | WS_VISIBLE | SS_LEFT,
             0, 0, 400, 20,
             hWnd, (HMENU)IDC_STATIC_STATUS, hInst, NULL);
@@ -819,7 +877,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
     case WM_LAUNCHER_EXITED:
         g_hLauncherProcess = NULL;
         EnableWindow(g_hBtnLaunch, TRUE);
-        UpdateStatusText(L"注入器已退出");
+        UpdateStatusText(GetI18N().statusLauncherExited);
         break;
 
     case WM_DESTROY:
@@ -844,8 +902,52 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 {
     g_hInst = hInstance;
 
-    if (!InitBinDir())
+    // Parse --lang argument before any GetI18N() call
+    {
+        int argc;
+        LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+        if (argv) {
+            for (int i = 1; i < argc - 1; i++) {
+                if (wcscmp(argv[i], L"--lang") == 0) {
+                    if (_wcsicmp(argv[i + 1], L"zh-cn") == 0)
+                        SetLanguageOverride(true);
+                    else if (_wcsicmp(argv[i + 1], L"en-us") == 0)
+                        SetLanguageOverride(false);
+                    break;
+                }
+            }
+            LocalFree(argv);
+        }
+    }
+
+    // Load CloudUpload DLL (required)
+    WCHAR exeDir[MAX_PATH];
+    GetModuleFileNameW(NULL, exeDir, MAX_PATH);
+    WCHAR* pLastSlash = wcsrchr(exeDir, L'\\');
+    if (pLastSlash) *(pLastSlash + 1) = L'\0';
+
+    WCHAR dllPath[MAX_PATH];
+    wsprintfW(dllPath, L"%sNTEUploadBase.dll", exeDir);
+
+    g_hCloudUploadDll = LoadLibraryW(dllPath);
+    if (!g_hCloudUploadDll) {
+        const auto& i18n = GetI18N();
+        MessageBoxW(NULL, i18n.msgDllNotFound, i18n.msgBoxError, MB_OK | MB_ICONERROR);
         return 1;
+    }
+
+    g_pfnUpload = (CloudUpload_UploadImage_t)GetProcAddress(g_hCloudUploadDll, "CloudUpload_UploadImage");
+    if (!g_pfnUpload) {
+        const auto& i18n = GetI18N();
+        MessageBoxW(NULL, i18n.msgDllNoFunction, i18n.msgBoxError, MB_OK | MB_ICONERROR);
+        FreeLibrary(g_hCloudUploadDll);
+        return 1;
+    }
+
+    if (!InitBinDir()) {
+        FreeLibrary(g_hCloudUploadDll);
+        return 1;
+    }
 
     Gdiplus::GdiplusStartupInput gdiplusStartupInput;
     Gdiplus::GdiplusStartup(&g_gdiplusToken, &gdiplusStartupInput, NULL);
@@ -887,7 +989,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     int posX = (screenW - windowW) / 2;
     int posY = (screenH - windowH) / 2;
 
-    HWND hWnd = CreateWindowExW(0, L"ImagePreprocessorWindow", L"异环呗果图片上传器 | By：香草味的纳西妲喵",
+    HWND hWnd = CreateWindowExW(0, L"ImagePreprocessorWindow", GetI18N().windowTitle,
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
         posX, posY, windowW, windowH,
         NULL, NULL, hInstance, NULL);
@@ -895,6 +997,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     if (!hWnd)
     {
         Gdiplus::GdiplusShutdown(g_gdiplusToken);
+        FreeLibrary(g_hCloudUploadDll);
         return 1;
     }
 
@@ -911,6 +1014,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     }
 
     Gdiplus::GdiplusShutdown(g_gdiplusToken);
+    if (g_hCloudUploadDll)
+        FreeLibrary(g_hCloudUploadDll);
 
     return (int)msg.wParam;
 }
