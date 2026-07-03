@@ -41,6 +41,7 @@ Tutorial video: [https://www.xcnahida.cn/archives/MFb9rQFg](https://www.xcnahida
 ## Instructions
 
 1. Do NOT launch the game launcher first. Start `NTE-Custom-BAGEL.exe` instead. You can download it from the [Release](https://github.com/VanillaNahida/NTE-Custom-BAGEL/releases) page.
+   - If you have both CN and Global servers installed, you can configure the paths and corresponding UIDs for both in **Settings**.
 
 2. Select the image you want to upload, then click the Start button. A black console window will appear — do NOT close it.
 
@@ -51,6 +52,11 @@ Tutorial video: [https://www.xcnahida.cn/archives/MFb9rQFg](https://www.xcnahida
 5. In-game, enter Photo Mode and press **F9** to start capture/replacement. Take your photo, then press **F9** again to stop capture/replacement.
 
 6. If you are unable to log in consistently, please restart the game.
+
+7. Click the **Open Folder** button on the main interface to quickly jump to the Selfie directory where the game stores your photos.
+
+8. You can also set the default game photo save folder in the **Settings** page. You can save the settings after selecting the folder.
+
 
 ## Important Notes
 
