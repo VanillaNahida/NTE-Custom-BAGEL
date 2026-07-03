@@ -149,6 +149,16 @@ def build_all():
         sys.exit(1)
     print(f"  -> {internal_path}")
 
+    # 自动清理 pdb 文件
+    for pdb in [
+        PROJECT_DIR / "异环呗果图片上传器.pdb",
+        PROJECT_DIR / "NTEUploadBase.pdb",
+        BIN_DIR / "NTE-internal.pdb",
+    ]:
+        if pdb.exists():
+            pdb.unlink()
+            print(f"  已自动删除PDB文件: {pdb.name}")
+
 
 def collect_files(version: str) -> list[tuple[str, str]]:
     """

@@ -23,12 +23,9 @@ replace.png
 *.zip
 *.txt
 bin2/
-HTGame.in-game.photo.replacement/
-HTGame.window.overlay.video/
 lib/
 src/resource.aps
-HTGame.BAGEL.Image.Review.Kernel
-异环自定义上传云控/
+NTEUploadControl/
 src/libs/
 *.exp
 *.lib
