@@ -403,6 +403,26 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         UpdateStatusText(GetI18N().statusLauncherExited);
         break;
 
+    case WM_COPYDATA:
+    {
+        COPYDATASTRUCT* pcds = (COPYDATASTRUCT*)lParam;
+        if (pcds && pcds->dwData == 1 && pcds->lpData)
+        {
+            // Update check notification from worker thread — show dialog on main thread
+            const wchar_t* title = (const wchar_t*)pcds->lpData;
+            const wchar_t* msg = title + wcslen(title) + 1;
+            int ret = MessageBoxW(hWnd, msg, title,
+                MB_YESNOCANCEL | MB_ICONINFORMATION | MB_DEFBUTTON1);
+            if (ret == IDYES)
+            {
+                ShellExecuteW(hWnd, L"open",
+                    L"https://github.com/VanillaNahida/NTE-Custom-BAGEL/releases",
+                    NULL, NULL, SW_SHOWNORMAL);
+            }
+        }
+        return TRUE;
+    }
+
     case WM_DESTROY:
         if (g_pPreviewBitmap)
         {
