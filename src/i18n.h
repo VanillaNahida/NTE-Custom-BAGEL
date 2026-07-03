@@ -36,6 +36,8 @@ struct LangStrings {
     const wchar_t* resolutionLabel;
     const wchar_t* btnSelectImage;
     const wchar_t* btnLaunch;
+    const wchar_t* btnOpenFolder;
+    const wchar_t* btnSettings;
     const wchar_t* btnAbout;
     const wchar_t* statusReady;
     const wchar_t* pathNoImageHint;     // initial hint text in path static
@@ -62,6 +64,9 @@ struct LangStrings {
     const wchar_t* msgLauncherNotFound;
     const wchar_t* msgDllNotFound;
     const wchar_t* msgDllNoFunction;
+    const wchar_t* msgNoGamePath;
+    const wchar_t* msgFolderNotExist;
+    const wchar_t* statusDefaultFolderHint;
     // --- File Dialog ---
     const wchar_t* fileDialogTitle;
     // --- About Dialog ---
@@ -76,6 +81,18 @@ struct LangStrings {
     // --- Update Check ---
     const wchar_t* updateTitle;
     const wchar_t* updateMsg;  // L"发现新版本 %s！\n当前版本：%s\n\n是否前往 GitHub 下载更新？"
+    // --- Settings Dialog ---
+    const wchar_t* settingsTitle;
+    const wchar_t* settingsGamePath;
+    const wchar_t* settingsUid;
+    const wchar_t* settingsAutoDetect;
+    const wchar_t* settingsSave;
+    const wchar_t* settingsCancel;
+    const wchar_t* settingsDetected;
+    const wchar_t* settingsNoPath;
+    const wchar_t* btnAddPath;
+    const wchar_t* btnRemovePath;
+    const wchar_t* btnRescanUID;
 };
 
 inline const LangStrings& GetI18N()
@@ -85,6 +102,8 @@ inline const LangStrings& GetI18N()
         L"分辨率:",
         L"选择图片",
         L"启动",
+        L"截图文件夹",
+        L"设置",
         L"关于",
         L"已准备就绪",
         L"未选择图片，可点击上方按钮选择或拖入图片到下方空白处。",
@@ -110,6 +129,9 @@ inline const LangStrings& GetI18N()
         L"未找到注入器，程序将无法继续运行，请确保下载并解压完整，且文件名未被修改。",
         L"无法加载 NTEUploadBase.dll，请确保该文件存在于程序目录中。",
         L"NTEUploadBase.dll 中未找到核心函数。",
+        L"请先在设置中配置游戏路径和玩家UID",
+        L"截图文件夹不存在，请检查设置中的游戏路径",
+        L"如需修改默认打开文件夹，请在程序设置中完成",
         L"请选择图片文件，推荐比例: 16:9, 不符合比例的图片将会被自动拉伸处理",
         L"关于",
         L"程序版本：",
@@ -121,6 +143,17 @@ inline const LangStrings& GetI18N()
         L"<a href=\"https://xcnahida.cn/contact\">问题反馈交流群</a>",        
         L"发现新版本",
         L"发现新版本 %s！\n当前版本：%s\n\n是否前往 GitHub 下载更新？",
+        L"设置",
+        L"游戏路径:",
+        L"玩家UID (每行一个):",
+        L"自动检测游戏路径",
+        L"保存",
+        L"取消",
+        L"已检测到游戏路径",
+        L"未检测到游戏路径，请手动设置或检查游戏是否已安装",
+        L"添加",
+        L"删除",
+        L"重新扫描",
     };
 
     static const LangStrings enUS = {
@@ -128,6 +161,8 @@ inline const LangStrings& GetI18N()
         L"Resolution:",
         L"Select Image",
         L"Launch",
+        L"Open Folder",
+        L"Settings",
         L"About",
         L"Ready",
         L"Select an image or drag & drop below.",
@@ -153,6 +188,9 @@ inline const LangStrings& GetI18N()
         L"Injector not found. Please ensure the download is complete and file names are unchanged.",
         L"Cannot load NTEUploadBase.dll. Please ensure it exists in the program directory.",
         L"NTEUploadBase.dll does not contain the required function.",
+        L"Please configure game path and player UIDs in Settings first.",
+        L"Screenshots folder not found. Check game path in Settings.",
+        L"To change the default folder, go to Settings.",
         L"Select an image file (recommended ratio: 16:9). Non-16:9 images will be stretched.",
         L"About",
         L"Version: ",
@@ -164,6 +202,17 @@ inline const LangStrings& GetI18N()
         L"<a href=\"https://xcnahida.cn/contact\">Contact / Support</a>",
         L"New Version Available",
         L"New version %s!\nCurrent version: %s\n\nDownload from GitHub?",
+        L"Settings",
+        L"Game Path:",
+        L"Player UIDs (one per line):",
+        L"Detect Game",
+        L"Save",
+        L"Cancel",
+        L"Game paths detected",
+        L"No game paths detected. Please install the game or add paths manually.",
+        L"Add",
+        L"Remove",
+        L"Rescan",
     };
 
     static const bool isChinese = GetEffectiveIsChinese();

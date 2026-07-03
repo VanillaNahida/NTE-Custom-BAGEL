@@ -9,6 +9,8 @@
 #include <shlobj.h>
 #include <tlhelp32.h>
 #include <string>
+#include <fstream>
+#include <vector>
 #include "resource.h"
 #include "i18n.h"
 
@@ -27,13 +29,34 @@
 #define IDC_STATIC_STATUS      1005
 #define IDC_STATIC_PATH        1006
 #define IDC_BTN_ABOUT          1007
+#define IDC_BTN_OPEN_FOLDER    1008
+#define IDC_BTN_SETTINGS       1009
 
 #define IDC_ABOUT_CLOSE        2001
+#define IDC_SETTINGS_UID_EDIT  2002
+#define IDC_SETTINGS_UID_LIST  2010
+#define IDC_SETTINGS_AUTO_DETECT 2003
+#define IDC_SETTINGS_SAVE      2004
+#define IDC_SETTINGS_CANCEL    2005
+#define IDC_SETTINGS_PATH_LIST  2006
+#define IDC_SETTINGS_ADD_PATH   2007
+#define IDC_SETTINGS_REMOVE_PATH 2008
+#define IDC_SETTINGS_RESCAN_UID 2009
+#define IDC_SETTINGS_ADD_UID    2011
+#define IDC_SETTINGS_REMOVE_UID 2012
+#define IDC_SETTINGS_UID_INPUT  2013
 
 #define WM_USER_UPDATE_STATUS  (WM_USER + 100)
 #define WM_LAUNCHER_EXITED     (WM_USER + 101)
 
 WCHAR g_szBinDir[MAX_PATH];
+
+// ====== AppConfig ======
+std::vector<std::wstring> g_gamePaths;
+std::vector<std::wstring> g_uids;
+std::wstring g_defaultGamePath;
+std::wstring g_defaultUid;
+WCHAR g_szConfigPath[MAX_PATH];
 
 // ====== CloudUpload DLL interface ======
 struct CloudUploadResult {
@@ -74,6 +97,8 @@ HWND g_hComboResolution;
 HWND g_hBtnSelect;
 HWND g_hBtnLaunch;
 HWND g_hBtnAbout;
+HWND g_hBtnOpenFolder;
+HWND g_hBtnSettings;
 HWND g_hStaticStatus;
 HWND g_hStaticPath;
 HWND g_hWndPreview;
@@ -89,6 +114,12 @@ bool g_bImageLoaded = false;
 void UpdatePreview();
 DWORD WINAPI LauncherWatchThread(LPVOID lpParam);
 LRESULT CALLBACK AboutDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+LRESULT CALLBACK SettingsDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+void LoadConfig();
+void SaveConfig();
+std::vector<std::wstring> DetectGamePaths();
+void OnOpenFolder();
+void OnSettings();
 
 ULONG_PTR g_gdiplusToken;
 
@@ -568,6 +599,706 @@ void OnAbout()
     }
 }
 
+// ====== JSON helpers (simple manual serialization for AppConfig.json) ======
+static std::wstring JsonEscape(const std::wstring& s)
+{
+    std::wstring out;
+    out.reserve(s.size());
+    for (wchar_t ch : s)
+    {
+        if (ch == L'\\') out += L"\\\\";
+        else if (ch == L'"') out += L"\\\"";
+        else out += ch;
+    }
+    return out;
+}
+
+static std::wstring JsonUnescape(const std::wstring& s)
+{
+    std::wstring out;
+    out.reserve(s.size());
+    for (size_t i = 0; i < s.size(); i++)
+    {
+        if (s[i] == L'\\' && i + 1 < s.size())
+        {
+            if (s[i + 1] == L'"') { out += L'"'; i++; }
+            else if (s[i + 1] == L'\\') { out += L'\\'; i++; }
+            else out += s[i];
+        }
+        else out += s[i];
+    }
+    return out;
+}
+
+static std::wstring VectorToJsonArray(const std::vector<std::wstring>& vec)
+{
+    std::wstring out = L"[";
+    for (size_t i = 0; i < vec.size(); i++)
+    {
+        if (i > 0) out += L",";
+        out += L"\"" + JsonEscape(vec[i]) + L"\"";
+    }
+    out += L"]";
+    return out;
+}
+
+void SaveConfig()
+{
+    std::wstring json = L"{\"gamePaths\":";
+    json += VectorToJsonArray(g_gamePaths);
+    json += L",\"uids\":";
+    json += VectorToJsonArray(g_uids);
+    json += L",\"defaultGamePath\":\"";
+    json += JsonEscape(g_defaultGamePath);
+    json += L"\",\"defaultUid\":\"";
+    json += JsonEscape(g_defaultUid);
+    json += L"\"}";
+
+    // Convert to UTF-8
+    int len = WideCharToMultiByte(CP_UTF8, 0, json.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    std::string utf8(len, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, json.c_str(), -1, &utf8[0], len, nullptr, nullptr);
+    // Remove trailing null
+    utf8.pop_back();
+
+    std::ofstream f(g_szConfigPath, std::ios::binary);
+    if (f.is_open())
+    {
+        f.write(utf8.c_str(), utf8.size());
+    }
+}
+
+void LoadConfig()
+{
+    std::ifstream f(g_szConfigPath, std::ios::binary);
+    if (!f.is_open()) return;
+
+    std::string utf8((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    f.close();
+
+    if (utf8.empty()) return;
+
+    int wlen = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, nullptr, 0);
+    std::wstring wjson(wlen, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, &wjson[0], wlen);
+    wjson.pop_back();
+
+    auto extractArray = [&wjson](const std::wstring& key) -> std::vector<std::wstring>
+    {
+        std::vector<std::wstring> result;
+        std::wstring searchKey = L"\"" + key + L"\"";
+
+        size_t keyPos = wjson.find(searchKey);
+        if (keyPos == std::wstring::npos) return result;
+
+        size_t start = wjson.find(L'[', keyPos);
+        if (start == std::wstring::npos) return result;
+
+        size_t end = wjson.find(L']', start);
+        if (end == std::wstring::npos) return result;
+
+        // Parse items between [start+1, end)
+        std::wstring content = wjson.substr(start + 1, end - start - 1);
+        if (content.empty()) return result;
+
+        size_t pos = 0;
+        while (pos < content.size())
+        {
+            // Skip whitespace and commas
+            while (pos < content.size() && (content[pos] == L' ' || content[pos] == L',' || content[pos] == L'\r' || content[pos] == L'\n'))
+                pos++;
+
+            if (pos >= content.size()) break;
+
+            if (content[pos] == L'"')
+            {
+                pos++; // skip opening quote
+                std::wstring item;
+                while (pos < content.size())
+                {
+                    if (content[pos] == L'\\' && pos + 1 < content.size())
+                    {
+                        item += content[pos];
+                        pos++;
+                        item += content[pos];
+                        pos++;
+                    }
+                    else if (content[pos] == L'"')
+                    {
+                        pos++;
+                        break;
+                    }
+                    else
+                    {
+                        item += content[pos];
+                        pos++;
+                    }
+                }
+                result.push_back(JsonUnescape(item));
+            }
+        }
+        return result;
+    };
+
+    g_gamePaths = extractArray(L"gamePaths");
+    g_uids = extractArray(L"uids");
+
+    auto extractString = [&wjson](const std::wstring& key) -> std::wstring
+    {
+        std::wstring searchKey = L"\"" + key + L"\"";
+        size_t keyPos = wjson.find(searchKey);
+        if (keyPos == std::wstring::npos) return L"";
+
+        size_t valueStart = wjson.find(L'"', keyPos + searchKey.size());
+        if (valueStart == std::wstring::npos) return L"";
+        valueStart++;
+
+        size_t valueEnd = wjson.find(L'"', valueStart);
+        if (valueEnd == std::wstring::npos) return L"";
+
+        std::wstring raw = wjson.substr(valueStart, valueEnd - valueStart);
+        return JsonUnescape(raw);
+    };
+
+    g_defaultGamePath = extractString(L"defaultGamePath");
+    g_defaultUid = extractString(L"defaultUid");
+}
+
+// ====== Registry: detect game paths ======
+std::vector<std::wstring> DetectGamePaths()
+{
+    std::vector<std::wstring> paths;
+    const wchar_t* regPaths[] = {
+        L"SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\YH",
+        L"SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\NTEGlobal"
+    };
+
+    for (const wchar_t* regPath : regPaths)
+    {
+        HKEY hKey = nullptr;
+        LONG result = RegOpenKeyExW(HKEY_LOCAL_MACHINE, regPath, 0, KEY_READ | KEY_WOW64_64KEY, &hKey);
+        if (result != ERROR_SUCCESS)
+        {
+            result = RegOpenKeyExW(HKEY_LOCAL_MACHINE, regPath, 0, KEY_READ, &hKey);
+        }
+        if (result == ERROR_SUCCESS)
+        {
+            WCHAR installPath[MAX_PATH] = {0};
+            DWORD size = sizeof(installPath);
+            DWORD type = REG_SZ;
+            if (RegQueryValueExW(hKey, L"InstallLocation", nullptr, &type, (LPBYTE)installPath, &size) == ERROR_SUCCESS)
+            {
+                std::wstring path(installPath);
+                // Remove trailing backslash if present
+                while (!path.empty() && path.back() == L'\\')
+                    path.pop_back();
+                if (!path.empty())
+                {
+                    // Check if this path is already in the list
+                    bool found = false;
+                    for (const auto& p : paths)
+                    {
+                        if (_wcsicmp(p.c_str(), path.c_str()) == 0)
+                        {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) paths.push_back(path);
+                }
+            }
+            RegCloseKey(hKey);
+        }
+    }
+    return paths;
+}
+
+// ====== Open screenshots folder ======
+void OnOpenFolder()
+{
+    const auto& i18n = GetI18N();
+
+    if (g_gamePaths.empty() || g_uids.empty())
+    {
+        MessageBoxW(g_hWndMain, i18n.msgNoGamePath, i18n.msgBoxHint, MB_OK | MB_ICONWARNING);
+        return;
+    }
+
+    // Use configured default path and UID, fallback to first entry
+    std::wstring usePath = (!g_defaultGamePath.empty()) ? g_defaultGamePath : g_gamePaths[0];
+    std::wstring useUid = (!g_defaultUid.empty()) ? g_defaultUid : g_uids[0];
+
+    // Build Selfie path: gamePath\Client\WindowsNoEditor\Selfie\UID
+    std::wstring selfiePath = usePath + L"\\Client\\WindowsNoEditor\\Selfie\\" + useUid;
+
+    DWORD attr = GetFileAttributesW(selfiePath.c_str());
+    if (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY))
+    {
+        ShellExecuteW(g_hWndMain, L"open", L"explorer", selfiePath.c_str(), NULL, SW_SHOWNORMAL);
+    }
+    else
+    {
+        // Fall back to parent Selfie folder
+        std::wstring fallbackPath = g_gamePaths[0] + L"\\Client\\WindowsNoEditor\\Selfie";
+        attr = GetFileAttributesW(fallbackPath.c_str());
+        if (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY))
+        {
+            ShellExecuteW(g_hWndMain, L"open", L"explorer", fallbackPath.c_str(), NULL, SW_SHOWNORMAL);
+        }
+        else
+        {
+            MessageBoxW(g_hWndMain, i18n.msgFolderNotExist, i18n.msgBoxHint, MB_OK | MB_ICONWARNING);
+        }
+    }
+}
+
+// ====== Scan UIDs from Selfie subfolders ======
+std::vector<std::wstring> ScanUIDs()
+{
+    std::vector<std::wstring> uids;
+    if (g_gamePaths.empty()) return uids;
+
+    for (const auto& gamePath : g_gamePaths)
+    {
+        std::wstring selfieDir = gamePath + L"\\Client\\WindowsNoEditor\\Selfie\\*";
+        WIN32_FIND_DATAW fd;
+        HANDLE hFind = FindFirstFileW(selfieDir.c_str(), &fd);
+        if (hFind == INVALID_HANDLE_VALUE) continue;
+
+        do
+        {
+            if ((fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) &&
+                wcscmp(fd.cFileName, L".") != 0 &&
+                wcscmp(fd.cFileName, L"..") != 0)
+            {
+                // Deduplicate
+                bool found = false;
+                for (const auto& existing : uids)
+                {
+                    if (existing == fd.cFileName) { found = true; break; }
+                }
+                if (!found) uids.push_back(fd.cFileName);
+            }
+        } while (FindNextFileW(hFind, &fd));
+        FindClose(hFind);
+    }
+    return uids;
+}
+
+// ====== Settings dialog ======
+LRESULT CALLBACK SettingsDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+    // Per-dialog snapshot for cancel/rollback
+    static std::vector<std::wstring> snapPaths;
+    static std::vector<std::wstring> snapUids;
+    static std::wstring snapDefPath;
+    static std::wstring snapDefUid;
+
+    switch (msg)
+    {
+    case WM_CREATE:
+    {
+        const auto& i18n = GetI18N();
+        HINSTANCE hInst = ((LPCREATESTRUCT)lParam)->hInstance;
+
+        // Snapshot current config
+        snapPaths = g_gamePaths;
+        snapUids = g_uids;
+        snapDefPath = g_defaultGamePath;
+        snapDefUid = g_defaultUid;
+
+        HFONT hFont = NULL;
+        NONCLIENTMETRICSW ncm = {0};
+        ncm.cbSize = sizeof(ncm);
+        if (SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, sizeof(ncm), &ncm, 0))
+        {
+            hFont = CreateFontIndirectW(&ncm.lfMessageFont);
+        }
+        if (!hFont)
+            hFont = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+        SetWindowLongPtrW(hWnd, GWLP_USERDATA, (LONG_PTR)hFont);
+
+        const int marginX = 16;
+        const int textW = 440;
+        int y = 14;
+
+        // Game path label
+        CreateWindowW(L"STATIC", i18n.settingsGamePath,
+            WS_CHILD | WS_VISIBLE,
+            marginX, y, textW, 20,
+            hWnd, NULL, hInst, NULL);
+        y += 22;
+
+        // Game path ListBox
+        HWND hList = CreateWindowW(L"LISTBOX", NULL,
+            WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | LBS_NOTIFY,
+            marginX, y, textW, 80,
+            hWnd, (HMENU)IDC_SETTINGS_PATH_LIST, hInst, NULL);
+        SendMessageW(hList, WM_SETFONT, (WPARAM)hFont, TRUE);
+        for (const auto& p : g_gamePaths)
+            SendMessageW(hList, LB_ADDSTRING, 0, (LPARAM)p.c_str());
+        // Select default path
+        for (int idx = 0; idx < (int)g_gamePaths.size(); idx++)
+        {
+            if (g_gamePaths[idx] == g_defaultGamePath)
+            {
+                SendMessageW(hList, LB_SETCURSEL, idx, 0);
+                break;
+            }
+        }
+        y += 88;
+
+        // Add / Remove / Auto Detect buttons row
+        int smallBtnW = 75;
+        int smallBtnH = 26;
+        int smallGap = 6;
+
+        HWND hAutoDetect = CreateWindowW(L"BUTTON", i18n.settingsAutoDetect,
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+            marginX, y, 140, smallBtnH,
+            hWnd, (HMENU)IDC_SETTINGS_AUTO_DETECT, hInst, NULL);
+        SendMessageW(hAutoDetect, WM_SETFONT, (WPARAM)hFont, TRUE);
+
+        HWND hAdd = CreateWindowW(L"BUTTON", i18n.btnAddPath,
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+            marginX + 140 + smallGap, y, smallBtnW, smallBtnH,
+            hWnd, (HMENU)IDC_SETTINGS_ADD_PATH, hInst, NULL);
+        SendMessageW(hAdd, WM_SETFONT, (WPARAM)hFont, TRUE);
+
+        HWND hRemove = CreateWindowW(L"BUTTON", i18n.btnRemovePath,
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+            marginX + 140 + smallBtnW + smallGap * 2, y, smallBtnW, smallBtnH,
+            hWnd, (HMENU)IDC_SETTINGS_REMOVE_PATH, hInst, NULL);
+        SendMessageW(hRemove, WM_SETFONT, (WPARAM)hFont, TRUE);
+        y += smallBtnH + 12;
+
+        // UID label
+        CreateWindowW(L"STATIC", i18n.settingsUid,
+            WS_CHILD | WS_VISIBLE,
+            marginX, y, textW, 20,
+            hWnd, NULL, hInst, NULL);
+        y += 22;
+
+        // UID ListBox
+        HWND hUidList = CreateWindowW(L"LISTBOX", NULL,
+            WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | LBS_NOTIFY,
+            marginX, y, textW, 70,
+            hWnd, (HMENU)IDC_SETTINGS_UID_LIST, hInst, NULL);
+        SendMessageW(hUidList, WM_SETFONT, (WPARAM)hFont, TRUE);
+        for (const auto& uid : g_uids)
+            SendMessageW(hUidList, LB_ADDSTRING, 0, (LPARAM)uid.c_str());
+        // Select default UID
+        for (int idx = 0; idx < (int)g_uids.size(); idx++)
+        {
+            if (g_uids[idx] == g_defaultUid)
+            {
+                SendMessageW(hUidList, LB_SETCURSEL, idx, 0);
+                break;
+            }
+        }
+        y += 78;
+
+        // UID input + Add / Remove / Rescan buttons row
+        int uidInputW = 120;
+        HWND hUidInput = CreateWindowW(L"EDIT", L"",
+            WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL,
+            marginX, y, uidInputW, smallBtnH,
+            hWnd, (HMENU)IDC_SETTINGS_UID_INPUT, hInst, NULL);
+        SendMessageW(hUidInput, WM_SETFONT, (WPARAM)hFont, TRUE);
+
+        HWND hAddUid = CreateWindowW(L"BUTTON", i18n.btnAddPath,
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+            marginX + uidInputW + smallGap, y, smallBtnW, smallBtnH,
+            hWnd, (HMENU)IDC_SETTINGS_ADD_UID, hInst, NULL);
+        SendMessageW(hAddUid, WM_SETFONT, (WPARAM)hFont, TRUE);
+
+        HWND hRemoveUid = CreateWindowW(L"BUTTON", i18n.btnRemovePath,
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+            marginX + uidInputW + smallBtnW + smallGap * 2, y, smallBtnW, smallBtnH,
+            hWnd, (HMENU)IDC_SETTINGS_REMOVE_UID, hInst, NULL);
+        SendMessageW(hRemoveUid, WM_SETFONT, (WPARAM)hFont, TRUE);
+
+        HWND hRescan = CreateWindowW(L"BUTTON", i18n.btnRescanUID,
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+            marginX + uidInputW + smallBtnW * 2 + smallGap * 3, y, smallBtnW, smallBtnH,
+            hWnd, (HMENU)IDC_SETTINGS_RESCAN_UID, hInst, NULL);
+        SendMessageW(hRescan, WM_SETFONT, (WPARAM)hFont, TRUE);
+        y += smallBtnH + 10;
+
+        // Save / Cancel buttons
+        int btnW = 90;
+        int btnH = 30;
+        int btnGap = 12;
+        int totalBtnW = btnW * 2 + btnGap;
+        int btnStartX = marginX + (textW - totalBtnW) / 2;
+
+        HWND hSave = CreateWindowW(L"BUTTON", i18n.settingsSave,
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+            btnStartX, y, btnW, btnH,
+            hWnd, (HMENU)IDC_SETTINGS_SAVE, hInst, NULL);
+        SendMessageW(hSave, WM_SETFONT, (WPARAM)hFont, TRUE);
+
+        HWND hCancel = CreateWindowW(L"BUTTON", i18n.settingsCancel,
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+            btnStartX + btnW + btnGap, y, btnW, btnH,
+            hWnd, (HMENU)IDC_SETTINGS_CANCEL, hInst, NULL);
+        SendMessageW(hCancel, WM_SETFONT, (WPARAM)hFont, TRUE);
+
+        // Size the dialog
+        RECT rcWindow = {0, 0, textW + marginX * 2, y + btnH + 16};
+        AdjustWindowRect(&rcWindow, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU, FALSE);
+        int dlgW = rcWindow.right - rcWindow.left;
+        int dlgH = rcWindow.bottom - rcWindow.top;
+
+        RECT rcParent;
+        GetWindowRect(((LPCREATESTRUCT)lParam)->hwndParent, &rcParent);
+        int x = rcParent.left + ((rcParent.right - rcParent.left) - dlgW) / 2;
+        int yPos = rcParent.top + ((rcParent.bottom - rcParent.top) - dlgH) / 2;
+
+        SetWindowPos(hWnd, NULL, x, yPos, dlgW, dlgH, SWP_NOZORDER);
+
+        // Auto-scan UIDs on open
+        {
+            auto scanned = ScanUIDs();
+            if (!scanned.empty())
+            {
+                SendMessageW(hUidList, LB_RESETCONTENT, 0, 0);
+                for (const auto& uid : scanned)
+                    SendMessageW(hUidList, LB_ADDSTRING, 0, (LPARAM)uid.c_str());
+                // Re-select default UID if still present
+                for (int idx = 0; idx < (int)scanned.size(); idx++)
+                {
+                    if (scanned[idx] == g_defaultUid)
+                    {
+                        SendMessageW(hUidList, LB_SETCURSEL, idx, 0);
+                        break;
+                    }
+                }
+            }
+        }
+
+        return 0;
+    }
+
+    case WM_COMMAND:
+    {
+        WORD id = LOWORD(wParam);
+        if (HIWORD(wParam) == BN_CLICKED)
+        {
+            const auto& i18n = GetI18N();
+            HWND hList = GetDlgItem(hWnd, IDC_SETTINGS_PATH_LIST);
+            HWND hUidList = GetDlgItem(hWnd, IDC_SETTINGS_UID_LIST);
+
+            switch (id)
+            {
+            case IDC_SETTINGS_AUTO_DETECT:
+            {
+                auto detected = DetectGamePaths();
+                SendMessageW(hList, LB_RESETCONTENT, 0, 0);
+                for (const auto& p : detected)
+                    SendMessageW(hList, LB_ADDSTRING, 0, (LPARAM)p.c_str());
+                if (!detected.empty())
+                    MessageBoxW(hWnd, i18n.settingsDetected, i18n.msgBoxHint, MB_OK | MB_ICONINFORMATION);
+                else
+                    MessageBoxW(hWnd, i18n.settingsNoPath, i18n.msgBoxHint, MB_OK | MB_ICONWARNING);
+                break;
+            }
+            case IDC_SETTINGS_ADD_PATH:
+            {
+                BROWSEINFOW bi = {0};
+                bi.hwndOwner = hWnd;
+                bi.lpszTitle = L"";
+                bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
+                LPITEMIDLIST pidl = SHBrowseForFolderW(&bi);
+                if (pidl)
+                {
+                    WCHAR folderPath[MAX_PATH];
+                    if (SHGetPathFromIDListW(pidl, folderPath))
+                    {
+                        SendMessageW(hList, LB_ADDSTRING, 0, (LPARAM)folderPath);
+                    }
+                    CoTaskMemFree(pidl);
+                }
+                break;
+            }
+            case IDC_SETTINGS_REMOVE_PATH:
+            {
+                int sel = (int)SendMessageW(hList, LB_GETCURSEL, 0, 0);
+                if (sel != LB_ERR)
+                    SendMessageW(hList, LB_DELETESTRING, sel, 0);
+                break;
+            }
+            case IDC_SETTINGS_ADD_UID:
+            {
+                HWND hInput = GetDlgItem(hWnd, IDC_SETTINGS_UID_INPUT);
+                WCHAR buf[256] = {0};
+                GetWindowTextW(hInput, buf, 256);
+                if (buf[0])
+                {
+                    SendMessageW(hUidList, LB_ADDSTRING, 0, (LPARAM)buf);
+                    SetWindowTextW(hInput, L"");
+                }
+                break;
+            }
+            case IDC_SETTINGS_REMOVE_UID:
+            {
+                int sel = (int)SendMessageW(hUidList, LB_GETCURSEL, 0, 0);
+                if (sel != LB_ERR)
+                    SendMessageW(hUidList, LB_DELETESTRING, sel, 0);
+                break;
+            }
+            case IDC_SETTINGS_RESCAN_UID:
+            {
+                // Use current ListBox paths for scanning
+                std::vector<std::wstring> tempPaths;
+                int count = (int)SendMessageW(hList, LB_GETCOUNT, 0, 0);
+                for (int i = 0; i < count; i++)
+                {
+                    int len = (int)SendMessageW(hList, LB_GETTEXTLEN, i, 0);
+                    std::wstring s(len + 1, L'\0');
+                    SendMessageW(hList, LB_GETTEXT, i, (LPARAM)&s[0]);
+                    s.resize(len);
+                    tempPaths.push_back(s);
+                }
+                std::swap(g_gamePaths, tempPaths);
+                auto scanned = ScanUIDs();
+                std::swap(g_gamePaths, tempPaths);
+
+                SendMessageW(hUidList, LB_RESETCONTENT, 0, 0);
+                for (const auto& uid : scanned)
+                    SendMessageW(hUidList, LB_ADDSTRING, 0, (LPARAM)uid.c_str());
+                break;
+            }
+            case IDC_SETTINGS_SAVE:
+            {
+                // Read paths from ListBox
+                g_gamePaths.clear();
+                int count = (int)SendMessageW(hList, LB_GETCOUNT, 0, 0);
+                for (int i = 0; i < count; i++)
+                {
+                    int len = (int)SendMessageW(hList, LB_GETTEXTLEN, i, 0);
+                    std::wstring s(len + 1, L'\0');
+                    SendMessageW(hList, LB_GETTEXT, i, (LPARAM)&s[0]);
+                    s.resize(len);
+                    if (!s.empty()) g_gamePaths.push_back(s);
+                }
+
+                // Read UIDs from UID ListBox
+                g_uids.clear();
+                int uidCount = (int)SendMessageW(hUidList, LB_GETCOUNT, 0, 0);
+                for (int i = 0; i < uidCount; i++)
+                {
+                    int len = (int)SendMessageW(hUidList, LB_GETTEXTLEN, i, 0);
+                    std::wstring s(len + 1, L'\0');
+                    SendMessageW(hUidList, LB_GETTEXT, i, (LPARAM)&s[0]);
+                    s.resize(len);
+                    if (!s.empty()) g_uids.push_back(s);
+                }
+
+                // Save selected items as defaults
+                int selPath = (int)SendMessageW(hList, LB_GETCURSEL, 0, 0);
+                if (selPath != LB_ERR)
+                {
+                    int len = (int)SendMessageW(hList, LB_GETTEXTLEN, selPath, 0);
+                    g_defaultGamePath.resize(len + 1);
+                    SendMessageW(hList, LB_GETTEXT, selPath, (LPARAM)&g_defaultGamePath[0]);
+                    g_defaultGamePath.resize(len);
+                }
+                else
+                    g_defaultGamePath.clear();
+
+                int selUid = (int)SendMessageW(hUidList, LB_GETCURSEL, 0, 0);
+                if (selUid != LB_ERR)
+                {
+                    int len = (int)SendMessageW(hUidList, LB_GETTEXTLEN, selUid, 0);
+                    g_defaultUid.resize(len + 1);
+                    SendMessageW(hUidList, LB_GETTEXT, selUid, (LPARAM)&g_defaultUid[0]);
+                    g_defaultUid.resize(len);
+                }
+                else
+                    g_defaultUid.clear();
+
+                SaveConfig();
+                // Update snapshot so WM_DESTROY doesn't roll back
+                snapPaths = g_gamePaths;
+                snapUids = g_uids;
+                snapDefPath = g_defaultGamePath;
+                snapDefUid = g_defaultUid;
+                DestroyWindow(hWnd);
+                break;
+            }
+            case IDC_SETTINGS_CANCEL:
+                DestroyWindow(hWnd);
+                break;
+            }
+        }
+        break;
+    }
+
+    case WM_CTLCOLORSTATIC:
+    {
+        HDC hdcStatic = (HDC)wParam;
+        SetBkMode(hdcStatic, TRANSPARENT);
+        return (LRESULT)GetSysColorBrush(COLOR_WINDOW);
+    }
+
+    case WM_CLOSE:
+        DestroyWindow(hWnd);
+        break;
+
+    case WM_DESTROY:
+    {
+        HFONT hFont = (HFONT)GetWindowLongPtrW(hWnd, GWLP_USERDATA);
+        if (hFont && hFont != (HFONT)GetStockObject(DEFAULT_GUI_FONT))
+            DeleteObject(hFont);
+
+        // Restore snapshot on cancel/close
+        if (snapPaths != g_gamePaths || snapUids != g_uids
+            || snapDefPath != g_defaultGamePath || snapDefUid != g_defaultUid)
+        {
+            g_gamePaths = snapPaths;
+            g_uids = snapUids;
+            g_defaultGamePath = snapDefPath;
+            g_defaultUid = snapDefUid;
+        }
+        EnableWindow(g_hWndMain, TRUE);
+        SetForegroundWindow(g_hWndMain);
+        break;
+    }
+    }
+
+    return DefWindowProcW(hWnd, msg, wParam, lParam);
+}
+
+void OnSettings()
+{
+    LoadConfig();
+
+    const auto& i18n = GetI18N();
+    WNDCLASSEXW wcSettings = {0};
+    wcSettings.cbSize = sizeof(wcSettings);
+    wcSettings.style = CS_HREDRAW | CS_VREDRAW;
+    wcSettings.lpfnWndProc = SettingsDlgProc;
+    wcSettings.hInstance = g_hInst;
+    wcSettings.hCursor = LoadCursorW(NULL, IDC_ARROW);
+    wcSettings.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    wcSettings.lpszClassName = L"SettingsDialog";
+    wcSettings.hIcon = LoadIconW(g_hInst, MAKEINTRESOURCEW(IDI_APPICON));
+    RegisterClassExW(&wcSettings);
+
+    HWND hDlg = CreateWindowExW(0, L"SettingsDialog", i18n.settingsTitle,
+        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
+        CW_USEDEFAULT, CW_USEDEFAULT, 480, CW_USEDEFAULT,
+        g_hWndMain, NULL, g_hInst, NULL);
+
+    if (hDlg)
+    {
+        EnableWindow(g_hWndMain, FALSE);
+        ShowWindow(hDlg, SW_SHOW);
+        UpdateWindow(hDlg);
+    }
+}
+
 void OnResolutionChanged()
 {
     const auto& i18n = GetI18N();
@@ -617,17 +1348,44 @@ void LayoutControls(int clientWidth, int clientHeight)
 
     y += rowHeight + gap;
 
-    const int btnWidth = 95;
-    const int btnSpacing = 8;
-    int totalButtonsWidth = btnWidth * 3 + btnSpacing * 2;
+    // Dynamic button width based on text
+    const auto& i18n = GetI18N();
+    const int btnSpacing = 6;
+    const wchar_t* btnTexts[] = {
+        i18n.btnSelectImage,
+        i18n.btnLaunch,
+        i18n.btnOpenFolder,
+        i18n.btnSettings,
+        i18n.btnAbout
+    };
+    const int btnTextCount = sizeof(btnTexts) / sizeof(btnTexts[0]);
+    int btnWidth = 60;
+    HDC hdc = GetDC(g_hWndMain);
+    HFONT oldFont = (HFONT)SelectObject(hdc, g_hFont);
+    for (int i = 0; i < btnTextCount; i++)
+    {
+        SIZE sz;
+        GetTextExtentPoint32W(hdc, btnTexts[i], (int)wcslen(btnTexts[i]), &sz);
+        int w = sz.cx + 14;
+        if (w > btnWidth) btnWidth = w;
+    }
+    SelectObject(hdc, oldFont);
+    ReleaseDC(g_hWndMain, hdc);
+
+    int totalButtonsWidth = btnWidth * 5 + btnSpacing * 4;
     int btnStartX = (clientWidth - totalButtonsWidth) / 2;
+    if (btnStartX < margin) btnStartX = margin;
 
     SetWindowPos(g_hBtnSelect, NULL,
         btnStartX, y, btnWidth, btnHeight, SWP_NOZORDER);
     SetWindowPos(g_hBtnLaunch, NULL,
         btnStartX + btnWidth + btnSpacing, y, btnWidth, btnHeight, SWP_NOZORDER);
-    SetWindowPos(g_hBtnAbout, NULL,
+    SetWindowPos(g_hBtnOpenFolder, NULL,
         btnStartX + (btnWidth + btnSpacing) * 2, y, btnWidth, btnHeight, SWP_NOZORDER);
+    SetWindowPos(g_hBtnSettings, NULL,
+        btnStartX + (btnWidth + btnSpacing) * 3, y, btnWidth, btnHeight, SWP_NOZORDER);
+    SetWindowPos(g_hBtnAbout, NULL,
+        btnStartX + (btnWidth + btnSpacing) * 4, y, btnWidth, btnHeight, SWP_NOZORDER);
 
     y += btnHeight + gap;
 
@@ -814,6 +1572,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
             0, 0, 140, 32,
             hWnd, (HMENU)IDC_BTN_ABOUT, hInst, NULL);
 
+        g_hBtnOpenFolder = CreateWindowW(L"BUTTON", i18n.btnOpenFolder,
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+            0, 0, 140, 32,
+            hWnd, (HMENU)IDC_BTN_OPEN_FOLDER, hInst, NULL);
+
+        g_hBtnSettings = CreateWindowW(L"BUTTON", i18n.btnSettings,
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+            0, 0, 140, 32,
+            hWnd, (HMENU)IDC_BTN_SETTINGS, hInst, NULL);
+
         g_hStaticPath = CreateWindowW(L"STATIC", i18n.pathNoImageHint,
             WS_CHILD | WS_VISIBLE | SS_LEFT | SS_ENDELLIPSIS,
             0, 0, 400, 20,
@@ -833,6 +1601,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         SendMessageW(g_hBtnSelect, WM_SETFONT, (WPARAM)g_hFont, TRUE);
         SendMessageW(g_hBtnLaunch, WM_SETFONT, (WPARAM)g_hFont, TRUE);
         SendMessageW(g_hBtnAbout, WM_SETFONT, (WPARAM)g_hFont, TRUE);
+        SendMessageW(g_hBtnOpenFolder, WM_SETFONT, (WPARAM)g_hFont, TRUE);
+        SendMessageW(g_hBtnSettings, WM_SETFONT, (WPARAM)g_hFont, TRUE);
         SendMessageW(g_hStaticPath, WM_SETFONT, (WPARAM)g_hFont, TRUE);
         SendMessageW(g_hStaticStatus, WM_SETFONT, (WPARAM)g_hFont, TRUE);
         SendMessageW(GetDlgItem(hWnd, IDC_STATIC_RESOLUTION), WM_SETFONT, (WPARAM)g_hFont, TRUE);
@@ -863,6 +1633,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         case IDC_BTN_LAUNCH:
             if (code == BN_CLICKED)
                 OnLaunchInjector();
+            break;
+
+        case IDC_BTN_OPEN_FOLDER:
+            if (code == BN_CLICKED)
+                OnOpenFolder();
+            break;
+
+        case IDC_BTN_SETTINGS:
+            if (code == BN_CLICKED)
+                OnSettings();
             break;
 
         case IDC_BTN_ABOUT:
@@ -962,6 +1742,19 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         return 1;
     }
 
+    // Initialize config path and load
+    {
+        wsprintfW(g_szConfigPath, L"%sAppConfig.json", exeDir);
+        LoadConfig();
+        // Auto-detect game paths if none configured
+        if (g_gamePaths.empty())
+        {
+            g_gamePaths = DetectGamePaths();
+            if (!g_gamePaths.empty())
+                SaveConfig();
+        }
+    }
+
     Gdiplus::GdiplusStartupInput gdiplusStartupInput;
     Gdiplus::GdiplusStartup(&g_gdiplusToken, &gdiplusStartupInput, NULL);
 
@@ -994,7 +1787,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     wcPrev.lpszClassName = L"PreviewWindow";
     RegisterClassExW(&wcPrev);
 
-    int windowW = 500;
+    int windowW = 560;
     int windowH = 520;
 
     int screenW = GetSystemMetrics(SM_CXSCREEN);
@@ -1016,6 +1809,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     ShowWindow(hWnd, nCmdShow);
     UpdateWindow(hWnd);
+
+    // Show default folder hint
+    {
+        const auto& i18n = GetI18N();
+        UpdateStatusText(i18n.statusDefaultFolderHint);
+    }
 
     TryLoadExistingImage();
 
