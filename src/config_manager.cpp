@@ -1,5 +1,6 @@
 #include "config_manager.h"
 #include "globals.h"
+#include "game_detector.h"
 #include <fstream>
 
 static std::wstring JsonEscape(const std::wstring& s)
@@ -160,4 +161,29 @@ void LoadConfig()
 
     g_defaultGamePath = extractString(L"defaultGamePath");
     g_defaultUid = extractString(L"defaultUid");
+
+    // Detect regions for loaded paths from file system
+    g_gamePathRegions.clear();
+    g_gamePathRegions.resize(g_gamePaths.size(), REGION_UNKNOWN);
+    for (size_t i = 0; i < g_gamePaths.size(); i++)
+    {
+        g_gamePathRegions[i] = DetectGameRegion(g_gamePaths[i]);
+    }
+
+    // Detect regions for loaded UIDs by matching against game paths
+    g_uidRegions.clear();
+    g_uidRegions.resize(g_uids.size(), REGION_UNKNOWN);
+    for (size_t ui = 0; ui < g_uids.size(); ui++)
+    {
+        for (size_t pi = 0; pi < g_gamePaths.size(); pi++)
+        {
+            std::wstring uidDir = g_gamePaths[pi] + L"\\Client\\WindowsNoEditor\\Selfie\\" + g_uids[ui];
+            DWORD attr = GetFileAttributesW(uidDir.c_str());
+            if (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY))
+            {
+                g_uidRegions[ui] = (pi < g_gamePathRegions.size()) ? g_gamePathRegions[pi] : REGION_UNKNOWN;
+                break;
+            }
+        }
+    }
 }

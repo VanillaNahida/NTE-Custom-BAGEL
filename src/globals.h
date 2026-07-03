@@ -56,9 +56,18 @@ extern const Resolution g_resolutions[];
 extern const int g_resolutionCount;
 extern int g_selectedResolution;
 
+// Region identifier for game paths and UIDs
+enum GameRegion {
+    REGION_CN = 0,
+    REGION_GLOBAL = 1,
+    REGION_UNKNOWN = -1
+};
+
 // Config
 extern std::vector<std::wstring> g_gamePaths;
+extern std::vector<int> g_gamePathRegions;
 extern std::vector<std::wstring> g_uids;
+extern std::vector<int> g_uidRegions;
 extern std::wstring g_defaultGamePath;
 extern std::wstring g_defaultUid;
 extern WCHAR g_szConfigPath[MAX_PATH];

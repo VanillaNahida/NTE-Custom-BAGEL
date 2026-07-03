@@ -1,21 +1,42 @@
 #include "game_detector.h"
 #include "globals.h"
 
+int DetectGameRegion(const std::wstring& gamePath)
+{
+    // Check for international server launcher first
+    std::wstring globalExe = gamePath + L"\\NTEGlobalLauncher.exe";
+    if (GetFileAttributesW(globalExe.c_str()) != INVALID_FILE_ATTRIBUTES)
+        return REGION_GLOBAL;
+
+    // Check for Chinese server launcher
+    std::wstring cnExe = gamePath + L"\\NTELauncher.exe";
+    if (GetFileAttributesW(cnExe.c_str()) != INVALID_FILE_ATTRIBUTES)
+        return REGION_CN;
+
+    return REGION_UNKNOWN;
+}
+
 std::vector<std::wstring> DetectGamePaths()
 {
     std::vector<std::wstring> paths;
-    const wchar_t* regPaths[] = {
-        L"SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\YH",
-        L"SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\NTEGlobal"
+    g_gamePathRegions.clear();
+
+    struct RegEntry {
+        const wchar_t* path;
+        int region;
+    };
+    const RegEntry regEntries[] = {
+        { L"SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\YH", REGION_CN },
+        { L"SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\NTEGlobal", REGION_GLOBAL }
     };
 
-    for (const wchar_t* regPath : regPaths)
+    for (const auto& entry : regEntries)
     {
         HKEY hKey = nullptr;
-        LONG result = RegOpenKeyExW(HKEY_LOCAL_MACHINE, regPath, 0, KEY_READ | KEY_WOW64_64KEY, &hKey);
+        LONG result = RegOpenKeyExW(HKEY_LOCAL_MACHINE, entry.path, 0, KEY_READ | KEY_WOW64_64KEY, &hKey);
         if (result != ERROR_SUCCESS)
         {
-            result = RegOpenKeyExW(HKEY_LOCAL_MACHINE, regPath, 0, KEY_READ, &hKey);
+            result = RegOpenKeyExW(HKEY_LOCAL_MACHINE, entry.path, 0, KEY_READ, &hKey);
         }
         if (result == ERROR_SUCCESS)
         {
@@ -38,7 +59,11 @@ std::vector<std::wstring> DetectGamePaths()
                             break;
                         }
                     }
-                    if (!found) paths.push_back(path);
+                    if (!found)
+                    {
+                        paths.push_back(path);
+                        g_gamePathRegions.push_back(entry.region);
+                    }
                 }
             }
             RegCloseKey(hKey);
@@ -50,10 +75,14 @@ std::vector<std::wstring> DetectGamePaths()
 std::vector<std::wstring> ScanUIDs()
 {
     std::vector<std::wstring> uids;
+    g_uidRegions.clear();
     if (g_gamePaths.empty()) return uids;
 
-    for (const auto& gamePath : g_gamePaths)
+    for (size_t pi = 0; pi < g_gamePaths.size(); pi++)
     {
+        const auto& gamePath = g_gamePaths[pi];
+        int region = (pi < g_gamePathRegions.size()) ? g_gamePathRegions[pi] : REGION_UNKNOWN;
+
         std::wstring selfieDir = gamePath + L"\\Client\\WindowsNoEditor\\Selfie\\*";
         WIN32_FIND_DATAW fd;
         HANDLE hFind = FindFirstFileW(selfieDir.c_str(), &fd);
@@ -70,7 +99,11 @@ std::vector<std::wstring> ScanUIDs()
                 {
                     if (existing == fd.cFileName) { found = true; break; }
                 }
-                if (!found) uids.push_back(fd.cFileName);
+                if (!found)
+                {
+                    uids.push_back(fd.cFileName);
+                    g_uidRegions.push_back(region);
+                }
             }
         } while (FindNextFileW(hFind, &fd));
         FindClose(hFind);

@@ -19,7 +19,9 @@ const int g_resolutionCount = 3;
 int g_selectedResolution = 1;
 
 std::vector<std::wstring> g_gamePaths;
+std::vector<int> g_gamePathRegions;
 std::vector<std::wstring> g_uids;
+std::vector<int> g_uidRegions;
 std::wstring g_defaultGamePath;
 std::wstring g_defaultUid;
 WCHAR g_szConfigPath[MAX_PATH] = {0};

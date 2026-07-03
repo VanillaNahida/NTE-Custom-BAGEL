@@ -6,10 +6,35 @@
 #include "i18n.h"
 #include <shlobj.h>
 
+static std::wstring MakePathDisplay(const std::wstring& path, int region)
+{
+    if (region == REGION_CN) return L"[CN] " + path;
+    if (region == REGION_GLOBAL) return L"[Global] " + path;
+    return path;
+}
+
+static std::wstring MakeUidDisplay(const std::wstring& uid, int region)
+{
+    if (region == REGION_CN) return L"[CN] " + uid;
+    if (region == REGION_GLOBAL) return L"[Global] " + uid;
+    return uid;
+}
+
+static std::wstring StripRegionPrefix(const std::wstring& display)
+{
+    if (display.find(L"[CN] ") == 0)
+        return display.substr(5);
+    if (display.find(L"[Global] ") == 0)
+        return display.substr(9);
+    return display;
+}
+
 LRESULT CALLBACK SettingsDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     static std::vector<std::wstring> snapPaths;
+    static std::vector<int> snapPathRegions;
     static std::vector<std::wstring> snapUids;
+    static std::vector<int> snapUidRegions;
     static std::wstring snapDefPath;
     static std::wstring snapDefUid;
 
@@ -21,7 +46,9 @@ LRESULT CALLBACK SettingsDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
         HINSTANCE hInst = ((LPCREATESTRUCT)lParam)->hInstance;
 
         snapPaths = g_gamePaths;
+        snapPathRegions = g_gamePathRegions;
         snapUids = g_uids;
+        snapUidRegions = g_uidRegions;
         snapDefPath = g_defaultGamePath;
         snapDefUid = g_defaultUid;
 
@@ -40,10 +67,11 @@ LRESULT CALLBACK SettingsDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
         const int textW = 440;
         int y = 14;
 
-        CreateWindowW(L"STATIC", i18n.settingsGamePath,
+        HWND hPathLabel = CreateWindowW(L"STATIC", i18n.settingsGamePath,
             WS_CHILD | WS_VISIBLE,
             marginX, y, textW, 20,
             hWnd, NULL, hInst, NULL);
+        SendMessageW(hPathLabel, WM_SETFONT, (WPARAM)hFont, TRUE);
         y += 22;
 
         HWND hList = CreateWindowW(L"LISTBOX", NULL,
@@ -51,8 +79,12 @@ LRESULT CALLBACK SettingsDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
             marginX, y, textW, 80,
             hWnd, (HMENU)IDC_SETTINGS_PATH_LIST, hInst, NULL);
         SendMessageW(hList, WM_SETFONT, (WPARAM)hFont, TRUE);
-        for (const auto& p : g_gamePaths)
-            SendMessageW(hList, LB_ADDSTRING, 0, (LPARAM)p.c_str());
+        for (size_t i = 0; i < g_gamePaths.size(); i++)
+        {
+            std::wstring display = MakePathDisplay(g_gamePaths[i],
+                i < g_gamePathRegions.size() ? g_gamePathRegions[i] : REGION_UNKNOWN);
+            SendMessageW(hList, LB_ADDSTRING, 0, (LPARAM)display.c_str());
+        }
         for (int idx = 0; idx < (int)g_gamePaths.size(); idx++)
         {
             if (g_gamePaths[idx] == g_defaultGamePath)
@@ -86,10 +118,11 @@ LRESULT CALLBACK SettingsDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
         SendMessageW(hRemove, WM_SETFONT, (WPARAM)hFont, TRUE);
         y += smallBtnH + 12;
 
-        CreateWindowW(L"STATIC", i18n.settingsUid,
+        HWND hUidLabel = CreateWindowW(L"STATIC", i18n.settingsUid,
             WS_CHILD | WS_VISIBLE,
             marginX, y, textW, 20,
             hWnd, NULL, hInst, NULL);
+        SendMessageW(hUidLabel, WM_SETFONT, (WPARAM)hFont, TRUE);
         y += 22;
 
         HWND hUidList = CreateWindowW(L"LISTBOX", NULL,
@@ -97,8 +130,12 @@ LRESULT CALLBACK SettingsDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
             marginX, y, textW, 70,
             hWnd, (HMENU)IDC_SETTINGS_UID_LIST, hInst, NULL);
         SendMessageW(hUidList, WM_SETFONT, (WPARAM)hFont, TRUE);
-        for (const auto& uid : g_uids)
-            SendMessageW(hUidList, LB_ADDSTRING, 0, (LPARAM)uid.c_str());
+        for (size_t i = 0; i < g_uids.size(); i++)
+        {
+            std::wstring display = MakeUidDisplay(g_uids[i],
+                i < g_uidRegions.size() ? g_uidRegions[i] : REGION_UNKNOWN);
+            SendMessageW(hUidList, LB_ADDSTRING, 0, (LPARAM)display.c_str());
+        }
         for (int idx = 0; idx < (int)g_uids.size(); idx++)
         {
             if (g_uids[idx] == g_defaultUid)
@@ -170,8 +207,12 @@ LRESULT CALLBACK SettingsDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
             if (!scanned.empty())
             {
                 SendMessageW(hUidList, LB_RESETCONTENT, 0, 0);
-                for (const auto& uid : scanned)
-                    SendMessageW(hUidList, LB_ADDSTRING, 0, (LPARAM)uid.c_str());
+                for (size_t i = 0; i < scanned.size(); i++)
+                {
+                    std::wstring display = MakeUidDisplay(scanned[i],
+                        i < g_uidRegions.size() ? g_uidRegions[i] : REGION_UNKNOWN);
+                    SendMessageW(hUidList, LB_ADDSTRING, 0, (LPARAM)display.c_str());
+                }
                 for (int idx = 0; idx < (int)scanned.size(); idx++)
                 {
                     if (scanned[idx] == g_defaultUid)
@@ -201,8 +242,12 @@ LRESULT CALLBACK SettingsDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
             {
                 auto detected = DetectGamePaths();
                 SendMessageW(hList, LB_RESETCONTENT, 0, 0);
-                for (const auto& p : detected)
-                    SendMessageW(hList, LB_ADDSTRING, 0, (LPARAM)p.c_str());
+                for (size_t i = 0; i < detected.size(); i++)
+                {
+                    std::wstring display = MakePathDisplay(detected[i],
+                        i < g_gamePathRegions.size() ? g_gamePathRegions[i] : REGION_UNKNOWN);
+                    SendMessageW(hList, LB_ADDSTRING, 0, (LPARAM)display.c_str());
+                }
                 if (!detected.empty())
                     MessageBoxW(hWnd, i18n.settingsDetected, i18n.msgBoxHint, MB_OK | MB_ICONINFORMATION);
                 else
@@ -221,7 +266,9 @@ LRESULT CALLBACK SettingsDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
                     WCHAR folderPath[MAX_PATH];
                     if (SHGetPathFromIDListW(pidl, folderPath))
                     {
-                        SendMessageW(hList, LB_ADDSTRING, 0, (LPARAM)folderPath);
+                        int region = DetectGameRegion(folderPath);
+                        std::wstring display = MakePathDisplay(folderPath, region);
+                        SendMessageW(hList, LB_ADDSTRING, 0, (LPARAM)display.c_str());
                     }
                     CoTaskMemFree(pidl);
                 }
@@ -241,7 +288,20 @@ LRESULT CALLBACK SettingsDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
                 GetWindowTextW(hInput, buf, 256);
                 if (buf[0])
                 {
-                    SendMessageW(hUidList, LB_ADDSTRING, 0, (LPARAM)buf);
+                    // Try to detect region from existing game paths
+                    int region = REGION_UNKNOWN;
+                    for (size_t pi = 0; pi < g_gamePaths.size(); pi++)
+                    {
+                        std::wstring uidDir = g_gamePaths[pi] + L"\\Client\\WindowsNoEditor\\Selfie\\" + buf;
+                        DWORD attr = GetFileAttributesW(uidDir.c_str());
+                        if (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY))
+                        {
+                            region = (pi < g_gamePathRegions.size()) ? g_gamePathRegions[pi] : REGION_UNKNOWN;
+                            break;
+                        }
+                    }
+                    std::wstring display = MakeUidDisplay(buf, region);
+                    SendMessageW(hUidList, LB_ADDSTRING, 0, (LPARAM)display.c_str());
                     SetWindowTextW(hInput, L"");
                 }
                 break;
@@ -256,6 +316,7 @@ LRESULT CALLBACK SettingsDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
             case IDC_SETTINGS_RESCAN_UID:
             {
                 std::vector<std::wstring> tempPaths;
+                std::vector<int> tempPathRegions;
                 int count = (int)SendMessageW(hList, LB_GETCOUNT, 0, 0);
                 for (int i = 0; i < count; i++)
                 {
@@ -263,20 +324,32 @@ LRESULT CALLBACK SettingsDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
                     std::wstring s(len + 1, L'\0');
                     SendMessageW(hList, LB_GETTEXT, i, (LPARAM)&s[0]);
                     s.resize(len);
-                    tempPaths.push_back(s);
+                    std::wstring raw = StripRegionPrefix(s);
+                    if (!raw.empty())
+                    {
+                        tempPaths.push_back(raw);
+                        tempPathRegions.push_back(DetectGameRegion(raw));
+                    }
                 }
                 std::swap(g_gamePaths, tempPaths);
+                std::swap(g_gamePathRegions, tempPathRegions);
                 auto scanned = ScanUIDs();
                 std::swap(g_gamePaths, tempPaths);
+                std::swap(g_gamePathRegions, tempPathRegions);
 
                 SendMessageW(hUidList, LB_RESETCONTENT, 0, 0);
-                for (const auto& uid : scanned)
-                    SendMessageW(hUidList, LB_ADDSTRING, 0, (LPARAM)uid.c_str());
+                for (size_t i = 0; i < scanned.size(); i++)
+                {
+                    std::wstring display = MakeUidDisplay(scanned[i],
+                        i < g_uidRegions.size() ? g_uidRegions[i] : REGION_UNKNOWN);
+                    SendMessageW(hUidList, LB_ADDSTRING, 0, (LPARAM)display.c_str());
+                }
                 break;
             }
             case IDC_SETTINGS_SAVE:
             {
                 g_gamePaths.clear();
+                g_gamePathRegions.clear();
                 int count = (int)SendMessageW(hList, LB_GETCOUNT, 0, 0);
                 for (int i = 0; i < count; i++)
                 {
@@ -284,10 +357,16 @@ LRESULT CALLBACK SettingsDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
                     std::wstring s(len + 1, L'\0');
                     SendMessageW(hList, LB_GETTEXT, i, (LPARAM)&s[0]);
                     s.resize(len);
-                    if (!s.empty()) g_gamePaths.push_back(s);
+                    std::wstring raw = StripRegionPrefix(s);
+                    if (!raw.empty())
+                    {
+                        g_gamePaths.push_back(raw);
+                        g_gamePathRegions.push_back(DetectGameRegion(raw));
+                    }
                 }
 
                 g_uids.clear();
+                g_uidRegions.clear();
                 int uidCount = (int)SendMessageW(hUidList, LB_GETCOUNT, 0, 0);
                 for (int i = 0; i < uidCount; i++)
                 {
@@ -295,16 +374,34 @@ LRESULT CALLBACK SettingsDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
                     std::wstring s(len + 1, L'\0');
                     SendMessageW(hUidList, LB_GETTEXT, i, (LPARAM)&s[0]);
                     s.resize(len);
-                    if (!s.empty()) g_uids.push_back(s);
+                    std::wstring raw = StripRegionPrefix(s);
+                    if (!raw.empty())
+                    {
+                        g_uids.push_back(raw);
+                        // Try to find which game path's Selfie dir contains this UID
+                        int uidRegion = REGION_UNKNOWN;
+                        for (size_t pi = 0; pi < g_gamePaths.size(); pi++)
+                        {
+                            std::wstring uidDir = g_gamePaths[pi] + L"\\Client\\WindowsNoEditor\\Selfie\\" + raw;
+                            DWORD attr = GetFileAttributesW(uidDir.c_str());
+                            if (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY))
+                            {
+                                uidRegion = g_gamePathRegions[pi];
+                                break;
+                            }
+                        }
+                        g_uidRegions.push_back(uidRegion);
+                    }
                 }
 
                 int selPath = (int)SendMessageW(hList, LB_GETCURSEL, 0, 0);
                 if (selPath != LB_ERR)
                 {
                     int len = (int)SendMessageW(hList, LB_GETTEXTLEN, selPath, 0);
-                    g_defaultGamePath.resize(len + 1);
-                    SendMessageW(hList, LB_GETTEXT, selPath, (LPARAM)&g_defaultGamePath[0]);
-                    g_defaultGamePath.resize(len);
+                    std::wstring selStr(len + 1, L'\0');
+                    SendMessageW(hList, LB_GETTEXT, selPath, (LPARAM)&selStr[0]);
+                    selStr.resize(len);
+                    g_defaultGamePath = StripRegionPrefix(selStr);
                 }
                 else
                     g_defaultGamePath.clear();
@@ -313,16 +410,19 @@ LRESULT CALLBACK SettingsDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
                 if (selUid != LB_ERR)
                 {
                     int len = (int)SendMessageW(hUidList, LB_GETTEXTLEN, selUid, 0);
-                    g_defaultUid.resize(len + 1);
-                    SendMessageW(hUidList, LB_GETTEXT, selUid, (LPARAM)&g_defaultUid[0]);
-                    g_defaultUid.resize(len);
+                    std::wstring selUidStr(len + 1, L'\0');
+                    SendMessageW(hUidList, LB_GETTEXT, selUid, (LPARAM)&selUidStr[0]);
+                    selUidStr.resize(len);
+                    g_defaultUid = StripRegionPrefix(selUidStr);
                 }
                 else
                     g_defaultUid.clear();
 
                 SaveConfig();
                 snapPaths = g_gamePaths;
+                snapPathRegions = g_gamePathRegions;
                 snapUids = g_uids;
+                snapUidRegions = g_uidRegions;
                 snapDefPath = g_defaultGamePath;
                 snapDefUid = g_defaultUid;
                 DestroyWindow(hWnd);
@@ -357,7 +457,9 @@ LRESULT CALLBACK SettingsDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
             || snapDefPath != g_defaultGamePath || snapDefUid != g_defaultUid)
         {
             g_gamePaths = snapPaths;
+            g_gamePathRegions = snapPathRegions;
             g_uids = snapUids;
+            g_uidRegions = snapUidRegions;
             g_defaultGamePath = snapDefPath;
             g_defaultUid = snapDefUid;
         }
