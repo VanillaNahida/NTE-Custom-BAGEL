@@ -89,6 +89,22 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="globals.cpp" />
+    <ClCompile Include="config_manager.cpp" />
+    <ClCompile Include="game_detector.cpp" />
+    <ClCompile Include="image_processor.cpp" />
+    <ClCompile Include="about_dialog.cpp" />
+    <ClCompile Include="settings_dialog.cpp" />
+    <ClCompile Include="preview_window.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="globals.h" />
+    <ClInclude Include="config_manager.h" />
+    <ClInclude Include="game_detector.h" />
+    <ClInclude Include="image_processor.h" />
+    <ClInclude Include="about_dialog.h" />
+    <ClInclude Include="settings_dialog.h" />
+    <ClInclude Include="preview_window.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="resource.rc" />
