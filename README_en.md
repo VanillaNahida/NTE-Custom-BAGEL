@@ -67,6 +67,9 @@ Tutorial video: [https://www.xcnahida.cn/archives/MFb9rQFg](https://www.xcnahida
 > [!WARNING]
 > If you do not press **F9** to cancel the injection after taking your photo, all images in your interface will be replaced!
 
+> [!WARNING]
+> Important! Make sure to select the correct resolution in the program and launch the game at the matching resolution. For example, if you set 1440P in the program, launch the game at 2560x1440 resolution in windowed mode. If you do not launch the game at the correct resolution, the replacement may fail!
+
 - Only supports **720P**, **1080P**, and **1440P** window resolution photos. Other resolutions will cause the replacement to fail, and larger images cannot be uploaded.
 - If you are unable to log in consistently, please restart the game.
 
