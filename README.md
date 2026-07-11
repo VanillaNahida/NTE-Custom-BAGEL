@@ -93,9 +93,6 @@
 - 问题反馈 & 交流群：https://xcnahida.cn/contact
 
 # Star History
-
-## Star History
-
 <a href="https://www.star-history.com/?repos=VanillaNahida%2FNTE-Custom-BAGEL&type=date&legend=top-left">
  <picture>
    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=VanillaNahida/NTE-Custom-BAGEL&type=date&theme=dark&legend=top-left&sealed_token=P_xOstw4z8yIBv252eDCa058c8xaNJGpdETMHQtBrUiAK4x96gE2rDyABIwsQV3TuFq8VsO0n88UgeepHLWwYVLmWNkhJIxoeOgUCicaF5Fc7zijlGRJ_g" />
