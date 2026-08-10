@@ -75,9 +75,22 @@ struct LangStrings {
     const wchar_t* aboutAuthor;
     const wchar_t* aboutDisclaimer;
     const wchar_t* aboutBtnOk;
+    const wchar_t* aboutDeviceCodePrefix;
+    const wchar_t* aboutDeviceCodeUnavailable;
+    const wchar_t* btnCopyDeviceCode;
+    const wchar_t* btnCopied;
     const wchar_t* aboutLinkGithub;
     const wchar_t* aboutLinkBilibili;
     const wchar_t* aboutLinkContact;
+    // --- Review Status ---
+    const wchar_t* msgReviewTitle;
+    const wchar_t* msgImageReviewPending;
+    const wchar_t* statusImageApproved;
+    // --- Notice Dialog ---
+    const wchar_t* noticeTitlePrefix;
+    const wchar_t* noticeUpdatedPrefix;
+    const wchar_t* btnNoticeOk;
+    const wchar_t* noticeDismissCheck;
     // --- Update Check ---
     const wchar_t* updateTitle;
     const wchar_t* updateMsg;  // L"发现新版本 %s！\n当前版本：%s\n\n是否前往 GitHub 下载更新？"
@@ -138,9 +151,20 @@ inline const LangStrings& GetI18N()
         L"作者：香草味的纳西妲喵",
         L"本程序开源，禁止用于商业用途，禁止上传违规图片，仅供学习交流和研究目的\n若程序被滥用或倒卖，作者将有权关闭使用权限。\n如对你有帮助，请给项目点一个Star!",
         L"确定",
+        L"设备码: ",
+        L"(获取失败)",
+        L"复制设备码",
+        L"已复制",
         L"<a href=\"https://github.com/VanillaNahida/NTE-Custom-BAGEL\">程序代码开源GitHub</a>",
         L"<a href=\"https://space.bilibili.com/1347891621\">作者B站主页</a>",
         L"<a href=\"https://xcnahida.cn/contact\">问题反馈交流群</a>",        
+        L"图片审核状态",
+        L"图片正在审核中，请一段时间后再看",
+        L"图片已通过审核",
+        L"软件公告",
+        L"更新日期：",
+        L"确定",
+        L"近期不再提示（一周）",
         L"发现新版本",
         L"发现新版本 %s！\n当前版本：%s\n\n是否前往 GitHub 下载更新？",
         L"设置",
@@ -197,9 +221,20 @@ inline const LangStrings& GetI18N()
         L"Author: VanillaNahida",
         L"This program is open source. Do not use for commercial purposes or upload inappropriate images.\nIt is intended for learning and research purposes only.\nIf the program is misused or resold, the author reserves the right to revoke access.\nIf you find this helpful, please give the project a Star!",
         L"OK",
+        L"Device ID: ",
+        L"(unavailable)",
+        L"Copy Device ID",
+        L"Copied",
         L"<a href=\"https://github.com/VanillaNahida/NTE-Custom-BAGEL\">GitHub Repository</a>",
         L"<a href=\"https://space.bilibili.com/1347891621\">Author's Bilibili Page</a>",
         L"<a href=\"https://xcnahida.cn/contact\">Contact / Support</a>",
+        L"Image Review Status",
+        L"Your image is under review. Please check back later.",
+        L"Image approved",
+        L"Announcement",
+        L"Updated: ",
+        L"OK",
+        L"Don't remind again (1 week)",
         L"New Version Available",
         L"New version %s!\nCurrent version: %s\n\nDownload from GitHub?",
         L"Settings",

@@ -6,6 +6,10 @@
 #include <commctrl.h>
 #include <shellapi.h>
 
+#define IDT_ABOUT_COPY 9001
+
+static std::wstring g_aboutDeviceCode;
+
 LRESULT CALLBACK AboutDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     switch (msg)
@@ -48,6 +52,45 @@ LRESULT CALLBACK AboutDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
             hWnd, NULL, hInst, NULL);
         SendMessageW(hAuthor, WM_SETFONT, (WPARAM)hFont, TRUE);
         y += infoLineHeight + 6;
+
+        // Device code (设备码) display + copy button
+        {
+            g_aboutDeviceCode.clear();
+            if (g_pfnGetMachineId)
+            {
+                WCHAR deviceBuf[128] = {0};
+                g_pfnGetMachineId(deviceBuf, 128);
+                if (deviceBuf[0])
+                    g_aboutDeviceCode = deviceBuf;
+            }
+
+            std::wstring deviceText = i18n.aboutDeviceCodePrefix + g_aboutDeviceCode;
+            if (g_aboutDeviceCode.empty())
+                deviceText = std::wstring(i18n.aboutDeviceCodePrefix) + i18n.aboutDeviceCodeUnavailable;
+
+            HDC hdcDev = GetDC(hWnd);
+            HFONT hOldDev = (HFONT)SelectObject(hdcDev, hFont);
+            RECT rcDev = {0, 0, textMaxWidth, 0};
+            DrawTextW(hdcDev, deviceText.c_str(), -1, &rcDev, DT_CALCRECT | DT_WORDBREAK);
+            SelectObject(hdcDev, hOldDev);
+            ReleaseDC(hWnd, hdcDev);
+
+            int devTextHeight = rcDev.bottom - rcDev.top;
+
+            HWND hDevice = CreateWindowW(L"STATIC", deviceText.c_str(),
+                WS_CHILD | WS_VISIBLE,
+                marginX, y, textMaxWidth, devTextHeight,
+                hWnd, NULL, hInst, NULL);
+            SendMessageW(hDevice, WM_SETFONT, (WPARAM)hFont, TRUE);
+            y += devTextHeight + 6;
+
+            HWND hCopyBtn = CreateWindowW(L"BUTTON", i18n.btnCopyDeviceCode,
+                WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+                marginX, y, 130, 28,
+                hWnd, (HMENU)IDC_ABOUT_COPY_DEVICE, hInst, NULL);
+            SendMessageW(hCopyBtn, WM_SETFONT, (WPARAM)hFont, TRUE);
+            y += 28 + 12;
+        }
 
         const WCHAR* szDisclaimer = i18n.aboutDisclaimer;
 
@@ -128,7 +171,40 @@ LRESULT CALLBACK AboutDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
     case WM_COMMAND:
         if (LOWORD(wParam) == IDC_ABOUT_CLOSE && HIWORD(wParam) == BN_CLICKED)
             DestroyWindow(hWnd);
+        else if (LOWORD(wParam) == IDC_ABOUT_COPY_DEVICE && HIWORD(wParam) == BN_CLICKED)
+        {
+            if (!g_aboutDeviceCode.empty() && OpenClipboard(hWnd))
+            {
+                EmptyClipboard();
+                size_t bytes = (g_aboutDeviceCode.size() + 1) * sizeof(wchar_t);
+                HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, bytes);
+                if (hMem)
+                {
+                    void* pMem = GlobalLock(hMem);
+                    if (pMem)
+                    {
+                        memcpy(pMem, g_aboutDeviceCode.c_str(), bytes);
+                        GlobalUnlock(hMem);
+                    }
+                    SetClipboardData(CF_UNICODETEXT, hMem);
+                }
+                CloseClipboard();
+
+                SetWindowTextW((HWND)lParam, GetI18N().btnCopied);
+                SetTimer(hWnd, IDT_ABOUT_COPY, 1500, NULL);
+            }
+        }
         break;
+
+    case WM_TIMER:
+        if (wParam == IDT_ABOUT_COPY)
+        {
+            KillTimer(hWnd, IDT_ABOUT_COPY);
+            HWND hCopyBtn = GetDlgItem(hWnd, IDC_ABOUT_COPY_DEVICE);
+            if (hCopyBtn)
+                SetWindowTextW(hCopyBtn, GetI18N().btnCopyDeviceCode);
+        }
+        return 0;
 
     case WM_NOTIFY:
     {
@@ -157,6 +233,7 @@ LRESULT CALLBACK AboutDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
     case WM_DESTROY:
     {
+        KillTimer(hWnd, IDT_ABOUT_COPY);
         HFONT hFont = (HFONT)GetWindowLongPtrW(hWnd, GWLP_USERDATA);
         if (hFont && hFont != (HFONT)GetStockObject(DEFAULT_GUI_FONT))
             DeleteObject(hFont);

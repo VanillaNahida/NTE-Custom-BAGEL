@@ -7,6 +7,7 @@
 #include "about_dialog.h"
 #include "settings_dialog.h"
 #include "preview_window.h"
+#include "notice_dialog.h"
 #include <windows.h>
 #include <objidl.h>
 #include <gdiplus.h>
@@ -113,6 +114,14 @@ void DoUploadAndLaunch()
             HANDLE hThread = CreateThread(NULL, 0, LauncherWatchThread, sei.hProcess, 0, NULL);
             if (hThread)
                 CloseHandle(hThread);
+        }
+
+        // Show image review status (图片审核状态)
+        if (result.approved) {
+            UpdateStatusText(i18n.statusImageApproved);
+        } else {
+            MessageBoxW(g_hWndMain, i18n.msgImageReviewPending, i18n.msgReviewTitle,
+                MB_OK | MB_ICONINFORMATION);
         }
     }
     else
@@ -403,6 +412,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         UpdateStatusText(GetI18N().statusLauncherExited);
         break;
 
+    case WM_NOTICE_AVAILABLE:
+    {
+        NoticePayload* p = (NoticePayload*)lParam;
+        if (p)
+        {
+            ShowNoticeWindow(p->content, p->timeText);
+            delete p;
+        }
+        return 0;
+    }
+
     case WM_COPYDATA:
     {
         COPYDATASTRUCT* pcds = (COPYDATASTRUCT*)lParam;
@@ -488,6 +508,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     }
 
     g_pfnCheckUpdate = (CloudUpload_CheckForUpdate_t)GetProcAddress(g_hCloudUploadDll, "CloudUpload_CheckForUpdate");
+    g_pfnGetMachineId = (CloudUpload_GetMachineId_t)GetProcAddress(g_hCloudUploadDll, "CloudUpload_GetMachineId");
+    g_pfnGetNotice = (CloudUpload_GetNotice_t)GetProcAddress(g_hCloudUploadDll, "CloudUpload_GetNotice");
 
     if (!InitBinDir()) {
         FreeLibrary(g_hCloudUploadDll);
@@ -576,6 +598,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             return 0;
         }, NULL, 0, NULL);
     }
+
+    // Check for announcements asynchronously on startup (公告)
+    StartNoticeCheck();
 
     MSG msg;
     while (GetMessageW(&msg, NULL, 0, 0))

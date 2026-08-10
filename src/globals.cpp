@@ -42,4 +42,6 @@ ULONG_PTR g_gdiplusToken = 0;
 
 HMODULE g_hCloudUploadDll = NULL;
 CloudUpload_UploadImage_t g_pfnUpload = NULL;
+CloudUpload_GetMachineId_t g_pfnGetMachineId = NULL;
+CloudUpload_GetNotice_t g_pfnGetNotice = NULL;
 CloudUpload_CheckForUpdate_t g_pfnCheckUpdate = NULL;

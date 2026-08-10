@@ -45,19 +45,27 @@ static std::wstring VectorToJsonArray(const std::vector<std::wstring>& vec)
     return out;
 }
 
-void SaveConfig()
+static std::wstring ReadConfigFile()
 {
-    std::wstring json = L"{\"gamePaths\":";
-    json += VectorToJsonArray(g_gamePaths);
-    json += L",\"uids\":";
-    json += VectorToJsonArray(g_uids);
-    json += L",\"defaultGamePath\":\"";
-    json += JsonEscape(g_defaultGamePath);
-    json += L"\",\"defaultUid\":\"";
-    json += JsonEscape(g_defaultUid);
-    json += L"\"}";
+    std::ifstream f(g_szConfigPath, std::ios::binary);
+    if (!f.is_open()) return L"";
+    std::string utf8((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    f.close();
 
+    if (utf8.empty()) return L"";
+
+    int wlen = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, nullptr, 0);
+    if (wlen <= 0) return L"";
+    std::wstring wjson(wlen, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, &wjson[0], wlen);
+    wjson.pop_back();
+    return wjson;
+}
+
+static void WriteConfigFile(const std::wstring& json)
+{
     int len = WideCharToMultiByte(CP_UTF8, 0, json.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    if (len <= 0) return;
     std::string utf8(len, '\0');
     WideCharToMultiByte(CP_UTF8, 0, json.c_str(), -1, &utf8[0], len, nullptr, nullptr);
     utf8.pop_back();
@@ -69,20 +77,121 @@ void SaveConfig()
     }
 }
 
+static std::wstring WideFromUtf8(const std::string& s)
+{
+    if (s.empty()) return L"";
+    int len = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0);
+    if (len <= 0) return L"";
+    std::wstring out(len, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, &out[0], len);
+    out.pop_back();
+    return out;
+}
+
+static std::string Utf8FromWide(const std::wstring& w)
+{
+    if (w.empty()) return "";
+    int len = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    if (len <= 0) return "";
+    std::string out(len, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, &out[0], len, nullptr, nullptr);
+    out.pop_back();
+    return out;
+}
+
+static std::wstring JsonExtractString(const std::wstring& wjson, const std::wstring& key)
+{
+    std::wstring searchKey = L"\"" + key + L"\"";
+    size_t keyPos = wjson.find(searchKey);
+    if (keyPos == std::wstring::npos) return L"";
+
+    size_t valueStart = wjson.find(L'"', keyPos + searchKey.size());
+    if (valueStart == std::wstring::npos) return L"";
+    valueStart++;
+
+    size_t valueEnd = wjson.find(L'"', valueStart);
+    if (valueEnd == std::wstring::npos) return L"";
+
+    return JsonUnescape(wjson.substr(valueStart, valueEnd - valueStart));
+}
+
+static long long JsonExtractNumber(const std::wstring& wjson, const std::wstring& key)
+{
+    std::wstring searchKey = L"\"" + key + L"\"";
+    size_t keyPos = wjson.find(searchKey);
+    if (keyPos == std::wstring::npos) return 0;
+
+    size_t colon = wjson.find(L':', keyPos);
+    if (colon == std::wstring::npos) return 0;
+
+    size_t start = colon + 1;
+    while (start < wjson.size() && wjson[start] == L' ') start++;
+
+    size_t end = start;
+    while (end < wjson.size() &&
+           (wjson[end] == L'-' || (wjson[end] >= L'0' && wjson[end] <= L'9')))
+        end++;
+
+    if (end == start) return 0;
+    try
+    {
+        return std::stoll(wjson.substr(start, end - start));
+    }
+    catch (...)
+    {
+        return 0;
+    }
+}
+
+// Build the complete config JSON: game config + announcement config
+static std::wstring BuildFullJson(const NoticeConfigData& notice)
+{
+    std::wstring json = L"{\"gamePaths\":";
+    json += VectorToJsonArray(g_gamePaths);
+    json += L",\"uids\":";
+    json += VectorToJsonArray(g_uids);
+    json += L",\"defaultGamePath\":\"";
+    json += JsonEscape(g_defaultGamePath);
+    json += L"\",\"defaultUid\":\"";
+    json += JsonEscape(g_defaultUid);
+    json += L"\",\"hash_zh\":\"";
+    json += JsonEscape(WideFromUtf8(notice.hashZh));
+    json += L"\",\"hash_en\":\"";
+    json += JsonEscape(WideFromUtf8(notice.hashEn));
+    json += L"\",\"dismiss_until\":";
+    json += std::to_wstring(notice.dismissUntil);
+    json += L"}";
+    return json;
+}
+
+void SaveConfig()
+{
+    // Preserve the current announcement state while writing the full config
+    NoticeConfigData notice;
+    LoadNoticeConfig(notice);
+    WriteConfigFile(BuildFullJson(notice));
+}
+
+void LoadNoticeConfig(NoticeConfigData& out)
+{
+    out = NoticeConfigData();
+    std::wstring wjson = ReadConfigFile();
+    if (wjson.empty()) return;
+
+    out.hashZh = Utf8FromWide(JsonExtractString(wjson, L"hash_zh"));
+    out.hashEn = Utf8FromWide(JsonExtractString(wjson, L"hash_en"));
+    out.dismissUntil = JsonExtractNumber(wjson, L"dismiss_until");
+}
+
+void SaveNoticeConfig(const NoticeConfigData& notice)
+{
+    WriteConfigFile(BuildFullJson(notice));
+}
+
 void LoadConfig()
 {
-    std::ifstream f(g_szConfigPath, std::ios::binary);
-    if (!f.is_open()) return;
-
-    std::string utf8((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
-    f.close();
-
-    if (utf8.empty()) return;
-
-    int wlen = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, nullptr, 0);
-    std::wstring wjson(wlen, L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, &wjson[0], wlen);
-    wjson.pop_back();
+    std::wstring wjson = ReadConfigFile();
+    if (wjson.empty()) return;
 
     auto extractArray = [&wjson](const std::wstring& key) -> std::vector<std::wstring>
     {
@@ -142,25 +251,8 @@ void LoadConfig()
     g_gamePaths = extractArray(L"gamePaths");
     g_uids = extractArray(L"uids");
 
-    auto extractString = [&wjson](const std::wstring& key) -> std::wstring
-    {
-        std::wstring searchKey = L"\"" + key + L"\"";
-        size_t keyPos = wjson.find(searchKey);
-        if (keyPos == std::wstring::npos) return L"";
-
-        size_t valueStart = wjson.find(L'"', keyPos + searchKey.size());
-        if (valueStart == std::wstring::npos) return L"";
-        valueStart++;
-
-        size_t valueEnd = wjson.find(L'"', valueStart);
-        if (valueEnd == std::wstring::npos) return L"";
-
-        std::wstring raw = wjson.substr(valueStart, valueEnd - valueStart);
-        return JsonUnescape(raw);
-    };
-
-    g_defaultGamePath = extractString(L"defaultGamePath");
-    g_defaultUid = extractString(L"defaultUid");
+    g_defaultGamePath = JsonExtractString(wjson, L"defaultGamePath");
+    g_defaultUid = JsonExtractString(wjson, L"defaultUid");
 
     // Detect regions for loaded paths from file system
     g_gamePathRegions.clear();
